@@ -1,0 +1,276 @@
+import type { LandUse, Parcel, PlanDraft } from './types';
+import { CROPS, type Crop, cropById } from './crops';
+import { summarizeFunding, type Capex, type FundingSummary } from './funding';
+import { summerDeficitAt } from './moor';
+
+/* ---------- Treibhausgas-Modell (vereinfacht, GEST-Logik) ---------- */
+
+const EMISSION_CURVE: [number, number][] = [
+  [-10, 10], [0, 6], [10, 5], [20, 10], [30, 17], [40, 23], [60, 29], [80, 32], [100, 35],
+];
+
+/** Netto-THG-Emission organischer Böden in t CO₂-Äq./ha·a in Abhängigkeit vom mittleren Wasserflurabstand (cm) */
+export function emissionPerHa(wlCm: number, peatDepthCm = 100, landUse: LandUse = 'gruenland_intensiv'): number {
+  const pts = EMISSION_CURVE;
+  let e: number;
+  if (wlCm <= pts[0][0]) e = pts[0][1];
+  else if (wlCm >= pts[pts.length - 1][0]) e = pts[pts.length - 1][1];
+  else {
+    let i = 0;
+    while (wlCm > pts[i + 1][0]) i++;
+    const [x1, y1] = pts[i];
+    const [x2, y2] = pts[i + 1];
+    e = y1 + ((wlCm - x1) / (x2 - x1)) * (y2 - y1);
+  }
+  const adder = landUse === 'acker' ? 3 : landUse === 'brache' ? -2 : 0;
+  e += adder * Math.min(1, Math.max(0, (wlCm - 10) / 30));
+  const peatFactor = 0.6 + 0.4 * Math.min(1, peatDepthCm / 100);
+  return Math.max(0, e * peatFactor);
+}
+
+export const emissionCurvePoints = () => {
+  const out: [number, number][] = [];
+  for (let w = -10; w <= 100; w += 5) out.push([w, emissionPerHa(w)]);
+  return out;
+};
+
+/** Deckungsbeitrag der heutigen Nutzung (ohne GAP-Basisprämie, die in beiden Varianten gleich bleibt) */
+export const BASELINE_DB: Record<LandUse, number> = {
+  acker: 520, gruenland_intensiv: 470, gruenland_extensiv: 210, brache: 0,
+};
+
+/* ---------- Eignung ---------- */
+
+export interface CropFit {
+  ok: boolean;
+  level: 'gut' | 'bedingt' | 'nein';
+  reasons: string[];
+}
+
+export function cropFit(crop: Crop, parcels: Parcel[]): CropFit {
+  const moor = parcels.filter((p) => p.moorType !== 'mineral');
+  const ha = moor.reduce((a, p) => a + p.areaHa, 0);
+  if (!ha) return { ok: false, level: 'nein', reasons: ['Keine Moorfläche ausgewählt'] };
+  const typeHa = moor.filter((p) => crop.moor.includes(p.moorType)).reduce((a, p) => a + p.areaHa, 0);
+  const peatAvg = moor.reduce((a, p) => a + p.peatDepthCm * p.areaHa, 0) / ha;
+  const reasons: string[] = [];
+  let level: CropFit['level'] = 'gut';
+  if (typeHa / ha < 0.5) {
+    reasons.push(`Nur für ${crop.moor.map((m) => (m === 'niedermoor' ? 'Niedermoor' : 'Hochmoor')).join('/')}`);
+    level = 'nein';
+  } else if (typeHa / ha < 0.95) {
+    reasons.push('Nur auf Teilen der Fläche geeignet');
+    level = 'bedingt';
+  }
+  if (peatAvg < crop.minPeatCm) {
+    reasons.push(`Torfmächtigkeit unter ${crop.minPeatCm} cm`);
+    level = 'nein';
+  }
+  if (ha < crop.minAreaHa) {
+    reasons.push(`Mindestgröße ${crop.minAreaHa} ha`);
+    level = level === 'nein' ? 'nein' : 'bedingt';
+  }
+  return { ok: level !== 'nein', level, reasons: reasons.length ? reasons : ['Standort und Größe passen'] };
+}
+
+/* ---------- Plan-Berechnung ---------- */
+
+export interface YearRow {
+  year: number;
+  revenue: number;
+  varCost: number;
+  certificates: number;
+  certCost: number;
+  premiums: number;
+  grants: number;
+  capex: number;
+  baselineLoss: number;
+  net: number;
+  delta: number;
+  cumNet: number;
+  cumDelta: number;
+  avoidedT: number;
+}
+
+export interface PlanResult {
+  hasMoor: boolean;
+  parcels: Parcel[];
+  areaHa: number;
+  moorHa: number;
+  mineralHa: number;
+  crop: Crop;
+  targetWl: number;
+  yieldFactor: number;
+  deficitMm: number;
+  fit: CropFit;
+  emissions: { baselinePerHa: number; scenarioPerHa: number; baselineT: number; scenarioT: number; avoidedT: number };
+  baselineDb: number;
+  capex: Capex & { perHa: number; ditchLenM: number; weirs: number; dikeM: number };
+  funding: FundingSummary;
+  rows: YearRow[];
+  kpis: {
+    fullRevenue: number;
+    fullVarCost: number;
+    fullCropDb: number;
+    fullCertNet: number;
+    steadyNet: number;
+    steadyDelta: number;
+    npv: number;
+    payback: number | null;
+    labourHours: number;
+    grantShare: number;
+  };
+}
+
+export const eur = (v: number) =>
+  new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v);
+
+function waterworksCost(moorHa: number, hochmoorShare: number, targetWl: number, deficit: number) {
+  const base = targetWl <= 10 ? 3200 : 1600;
+  const size = moorHa >= 20 ? 0.85 : moorHa >= 8 ? 1 : moorHa >= 3 ? 1.15 : 1.3;
+  const perHa = (base + 1200 * hochmoorShare + Math.max(0, deficit) * 2.5) * size;
+  return perHa * moorHa;
+}
+
+export function analyze(parcels: Parcel[], draft: PlanDraft, cropOverride?: string): PlanResult {
+  const crop = cropById(cropOverride ?? draft.cropId) ?? CROPS[0];
+  const moorParcels = parcels.filter((p) => p.moorType !== 'mineral');
+  const moorHa = moorParcels.reduce((a, p) => a + p.areaHa, 0);
+  const areaHa = parcels.reduce((a, p) => a + p.areaHa, 0);
+  const hochHa = moorParcels.filter((p) => p.moorType === 'hochmoor').reduce((a, p) => a + p.areaHa, 0);
+  const hochmoorShare = moorHa ? hochHa / moorHa : 0;
+  const targetWl = draft.targetWlCm ?? crop.waterLevelCm;
+  const deficit = moorHa
+    ? moorParcels.reduce((a, p) => a + summerDeficitAt(p.centroid) * p.areaHa, 0) / moorHa
+    : 0;
+  const dev = Math.abs(targetWl - crop.waterLevelCm);
+  const wlFactor = Math.max(0.4, 1 - 0.015 * Math.max(0, dev - 8));
+  const deficitFactor = 1 - (Math.min(Math.max(deficit, 0), 200) / 200) * 0.15;
+  const yieldFactor = wlFactor * deficitFactor;
+
+  // Emissionen
+  let baseT = 0;
+  let scenT = 0;
+  for (const p of moorParcels) {
+    baseT += emissionPerHa(p.waterLevelCm, p.peatDepthCm, p.landUse) * p.areaHa;
+    scenT += emissionPerHa(targetWl, p.peatDepthCm, p.landUse) * p.areaHa;
+  }
+  const avoidedT = Math.max(0, baseT - scenT);
+
+  // Investition
+  const waterworks = waterworksCost(moorHa, hochmoorShare, targetWl, deficit);
+  const planning = moorHa ? 4500 + 350 * moorHa : 0;
+  const establishment = crop.establishmentPerHa * moorHa;
+  const total = waterworks + planning + establishment;
+  const ditchLenM = (moorHa * 10000) / 60;
+  const capex = {
+    planning, waterworks, establishment, total,
+    perHa: moorHa ? total / moorHa : 0,
+    ditchLenM,
+    weirs: moorHa ? Math.max(2, Math.round(ditchLenM / 300)) : 0,
+    dikeM: targetWl <= 10 && moorHa ? Math.round(4 * Math.sqrt(moorHa * 10000) * 1.1) : 0,
+  };
+
+  const states = [...new Set(parcels.map((p) => p.bundesland))];
+  const funding = summarizeFunding({ states, areaHa, moorHa, crop, targetWlCm: targetWl, capex });
+  const grants = draft.useFunding ? funding.oneTime : 0;
+  const premiumAnnual = draft.useFunding ? funding.annual : 0;
+  const premiumYears = draft.useFunding ? funding.annualYears : 0;
+
+  const baselineDb = parcels.reduce((a, p) => a + (p.moorType !== 'mineral' ? BASELINE_DB[p.landUse] * p.areaHa : 0), 0);
+
+  const rows: YearRow[] = [];
+  let cumNet = 0;
+  let cumDelta = 0;
+  for (let y = 0; y <= draft.horizonYears; y++) {
+    let r: YearRow;
+    if (y === 0) {
+      r = {
+        year: 0, revenue: 0, varCost: 0, certificates: 0, certCost: 0, premiums: 0, grants: 0,
+        capex: total, baselineLoss: 0, net: -total, delta: -total, cumNet: 0, cumDelta: 0, avoidedT: 0,
+      };
+    } else {
+      const ramp = crop.ramp[Math.min(y - 1, crop.ramp.length - 1)];
+      const revenue = moorHa * crop.yieldPerHa * crop.pricePerUnit * ramp * yieldFactor;
+      const varCost = moorHa * crop.varCostPerHa * Math.max(ramp, 0.35);
+      const avoided = y === 1 ? avoidedT * 0.5 : avoidedT;
+      const certGross = draft.sellCertificates && y >= 2 ? avoided * draft.co2Price * 0.8 : 0;
+      const certCost = certGross > 0 ? 800 + certGross * 0.12 : 0;
+      const premiums = y <= premiumYears ? premiumAnnual : 0;
+      const grantsY = y === 1 ? grants : 0;
+      const net = revenue - varCost + certGross - certCost + premiums + grantsY;
+      r = {
+        year: y, revenue, varCost, certificates: certGross, certCost, premiums, grants: grantsY, capex: 0,
+        baselineLoss: baselineDb, net, delta: net - baselineDb, cumNet: 0, cumDelta: 0, avoidedT: avoided,
+      };
+    }
+    cumNet += r.net;
+    cumDelta += r.delta;
+    r.cumNet = cumNet;
+    r.cumDelta = cumDelta;
+    rows.push(r);
+  }
+
+  let npv = 0;
+  rows.forEach((r) => (npv += r.delta / Math.pow(1 + draft.discountRate, r.year)));
+  let payback: number | null = null;
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i].cumDelta >= 0) {
+      const prev = rows[i - 1].cumDelta;
+      payback = i - 1 + (0 - prev) / (rows[i].cumDelta - prev);
+      break;
+    }
+  }
+
+  const fullRevenue = moorHa * crop.yieldPerHa * crop.pricePerUnit * yieldFactor;
+  const fullVarCost = moorHa * crop.varCostPerHa;
+  const fullCertGross = draft.sellCertificates ? avoidedT * draft.co2Price * 0.8 : 0;
+  const fullCertNet = fullCertGross > 0 ? fullCertGross - 800 - fullCertGross * 0.12 : 0;
+  const steady = rows[Math.min(rows.length - 1, Math.max(1, Math.min(draft.horizonYears, 12)))];
+
+  return {
+    hasMoor: moorHa > 0,
+    parcels,
+    areaHa, moorHa, mineralHa: areaHa - moorHa,
+    crop, targetWl, yieldFactor, deficitMm: deficit,
+    fit: cropFit(crop, parcels),
+    emissions: {
+      baselinePerHa: moorHa ? baseT / moorHa : 0,
+      scenarioPerHa: moorHa ? scenT / moorHa : 0,
+      baselineT: baseT, scenarioT: scenT, avoidedT,
+    },
+    baselineDb,
+    capex, funding, rows,
+    kpis: {
+      fullRevenue, fullVarCost,
+      fullCropDb: fullRevenue - fullVarCost,
+      fullCertNet,
+      steadyNet: steady?.net ?? 0,
+      steadyDelta: steady?.delta ?? 0,
+      npv, payback,
+      labourHours: moorHa * crop.labourHoursPerHa,
+      grantShare: total ? grants / total : 0,
+    },
+  };
+}
+
+export function rankCrops(parcels: Parcel[], draft: PlanDraft) {
+  return CROPS.map((c) => {
+    const d = { ...draft, cropId: c.id, targetWlCm: null };
+    return analyze(parcels, d, c.id);
+  }).sort((a, b) => {
+    if (a.fit.ok !== b.fit.ok) return a.fit.ok ? -1 : 1;
+    return b.kpis.npv - a.kpis.npv;
+  });
+}
+
+export const defaultDraft = (): PlanDraft => ({
+  parcelIds: [],
+  cropId: 'rohrkolben',
+  targetWlCm: null,
+  co2Price: 65,
+  sellCertificates: true,
+  useFunding: true,
+  horizonYears: 20,
+  discountRate: 0.03,
+});
