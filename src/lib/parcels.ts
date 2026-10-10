@@ -4,16 +4,16 @@ import {
   ringAreaHa, ringCentroid, rngFrom, toKm,
 } from './geo';
 import { regionById, soilAt, type SoilInfo } from './moor';
-import { BW_ALKIS_PARCELS, getBwAlkisParcelsInBounds, fetchLiveBwAlkisParcels } from './alkis_bw';
+import { BW_ALKIS_PARCELS } from './alkis_bw';
 
-export { BW_ALKIS_PARCELS, fetchLiveBwAlkisParcels };
+export { BW_ALKIS_PARCELS };
 
 /**
  * Parzellen-Provider (Prototyp).
  *
  * Es gibt keinen bundesweiten Open-Data-Dienst für Flurstücke (ALKIS liegt bei den Ländern).
- * Dieser Provider erzeugt deshalb deterministisch eine realistisch wirkende Flurstücksstruktur für
- * ganz Deutschland. Die Schnittstelle `parcelsInBounds` kann später 1:1 durch Länder-WFS/ALKIS ersetzt werden.
+ * Für Baden-Württemberg lädt `alkis_live.ts` die amtlichen Flurstücke direkt vom LGL-WFS.
+ * Für alle anderen Länder erzeugt dieser Provider deterministisch eine Flurstücksstruktur (Modell).
  */
 
 const cache = new Map<string, Parcel[]>();
@@ -39,7 +39,7 @@ function pickLandUse(r: number, soil: SoilInfo): LandUse {
   return 'brache';
 }
 
-function buildParcel(
+export function buildParcel(
   id: string, label: string, ring: LatLng[], gemarkung: string, seed: number, custom = false,
 ): Parcel {
   const centroid = ringCentroid(ring);
@@ -162,19 +162,16 @@ function superBlockParcels(I: number, J: number): Parcel[] {
 }
 
 export function parcelsInBounds(south: number, west: number, north: number, east: number, maxBlocks = 220): Parcel[] {
-  // Pruefen ob der Ausschnitt Baden-Wuerttemberg beruehrt:
-  const isBw = south <= 49.85 && north >= 47.50 && west <= 10.55 && east >= 7.45;
-  const bwParcels = isBw ? getBwAlkisParcelsInBounds(south, west, north, east) : [];
-
   const [x1, y1] = toKm(south, west);
   const [x2, y2] = toKm(north, east);
   const i0 = Math.floor(x1);
   const i1 = Math.floor(x2);
   const j0 = Math.floor(y1);
   const j1 = Math.floor(y2);
-  if ((i1 - i0 + 1) * (j1 - j0 + 1) > maxBlocks) return bwParcels;
-  const res: Parcel[] = [...bwParcels];
-  for (let I = i0; I <= i1; I++) for (let J = j0; J <= j1; J++) res.push(...superBlockParcels(I, J));
+  if ((i1 - i0 + 1) * (j1 - j0 + 1) > maxBlocks) return [];
+  const res: Parcel[] = [];
+  // Baden-Württemberg kommt live aus dem amtlichen LGL-Kataster (siehe alkis_live.ts)
+  for (let I = i0; I <= i1; I++) for (let J = j0; J <= j1; J++) res.push(...superBlockParcels(I, J).filter((p) => p.bundesland !== 'BW'));
   return res;
 }
 

@@ -56,7 +56,7 @@ export default function FarmerOnboarding({ onClose }: Props) {
 
   // Step 3: Ziele & Förderung
   const [targetCrop, setTargetCrop] = useState<'rohrkolben' | 'nassgruenland' | 'torfmoos' | 'moor_pv'>('rohrkolben');
-  const [fundingPrograms, setFundingPrograms] = useState<string[]>(['ank_bund', 'bw_moorbauern']);
+  const [fundingPrograms, setFundingPrograms] = useState<string[]>(['palu', 'land']);
 
   // Step 4: Flurstücks-Vorauswahl
   const [parcelOption, setParcelOption] = useState<'alkis_bw' | 'teufelsmoor' | 'leer'>('alkis_bw');
@@ -480,13 +480,13 @@ export default function FarmerOnboarding({ onClose }: Props) {
                   <label className="enterprise-checkbox-row">
                     <input
                       type="checkbox"
-                      checked={fundingPrograms.includes('ank_bund')}
-                      onChange={() => toggleFunding('ank_bund')}
+                      checked={fundingPrograms.includes('palu')}
+                      onChange={() => toggleFunding('palu')}
                     />
                     <div>
-                      <b>Aktionsprogramm Natürlicher Klimaschutz (ANK Bund)</b>
+                      <b>Bundesförderung Palu (Rentenbank, ab 5 ha)</b>
                       <div className="muted small">
-                        Bis zu 90 % Zuschuss für Wasserbau-Investitionen, Stauanlagen und Kultur-Etablierung.
+                        Beratung, Planung und Wasserbau zu 100 %, Ausgleich für Wert- und Ertragsverluste, 70–80 % für die Etablierung von Paludikultur.
                       </div>
                     </div>
                   </label>
@@ -494,13 +494,13 @@ export default function FarmerOnboarding({ onClose }: Props) {
                   <label className="enterprise-checkbox-row">
                     <input
                       type="checkbox"
-                      checked={fundingPrograms.includes('bw_moorbauern')}
-                      onChange={() => toggleFunding('bw_moorbauern')}
+                      checked={fundingPrograms.includes('land')}
+                      onChange={() => toggleFunding('land')}
                     />
                     <div>
-                      <b>Moorbauernprogramm Baden-Württemberg / Länder-Förderrichtlinie</b>
+                      <b>Programme Ihres Bundeslandes</b>
                       <div className="muted small">
-                        Flächenausgleichszahlung für angehobene Wasserstände und Ertragsanpassung.
+                        Zum Beispiel Moorbauernprogramm (Bayern) oder Landschaftspflegerichtlinie (Baden-Württemberg). Paludio prüft, was für Ihre Flächen gilt.
                       </div>
                     </div>
                   </label>
@@ -514,7 +514,7 @@ export default function FarmerOnboarding({ onClose }: Props) {
                     <div>
                       <b>Freiwilliger CO₂-Zertifikatemarkt (Moorfutures / Paludi-Credits)</b>
                       <div className="muted small">
-                        Zusätzliche Vermarktung nachgewiesener THG-Minderungen an Unternehmen (35–65 €/t CO₂e).
+                        Zusätzliche Vermarktung nachgewiesener THG-Minderungen an Unternehmen.
                       </div>
                     </div>
                   </label>

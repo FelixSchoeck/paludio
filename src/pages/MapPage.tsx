@@ -5,6 +5,7 @@ import 'leaflet/dist/leaflet.css';
 import { useStore } from '../lib/store';
 import type { LatLng, MoorType, Parcel } from '../lib/types';
 import { parcelsInBounds, makeCustomParcel, landUseLabel } from '../lib/parcels';
+import { bwParcelsInView, onBwTilesLoaded, BW_ATTRIBUTION, BW_MIN_ZOOM } from '../lib/alkis_live';
 import { soilAt, MOOR_REGIONS } from '../lib/moor';
 import { BUNDESLAENDER, CITIES } from '../lib/geo';
 import { emissionPerHa } from '../lib/calc';
@@ -53,6 +54,7 @@ export default function MapPage() {
   const [remote, setRemote] = useState<Suggestion[]>([]);
   const [searching, setSearching] = useState(false);
   const [showSug, setShowSug] = useState(false);
+  const [bwStatus, setBwStatus] = useState<{ loading: boolean; offline: boolean; needZoom: boolean }>({ loading: false, offline: false, needZoom: false });
 
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
@@ -76,10 +78,13 @@ export default function MapPage() {
     });
     mapRef.current = map;
     map.zoomControl.setPosition('topright');
+    map.attributionControl.addAttribution(BW_ATTRIBUTION);
     // Mit eigenen Flächen direkt dorthin springen
     if (state.myParcels.length) {
       const bounds = L.latLngBounds(state.myParcels.flatMap((p) => p.ring));
       map.fitBounds(bounds, { maxZoom: 15, padding: [60, 60] });
+      // In BW direkt auf die Zoomstufe, ab der amtliche Flurstücke kommen
+      if (state.myParcels.some((p) => p.bundesland === 'BW') && map.getZoom() < BW_MIN_ZOOM) map.setZoom(BW_MIN_ZOOM, { animate: false });
     }
 
     const MoorGrid = (L.GridLayer as unknown as { extend: (o: object) => new (o?: object) => L.GridLayer }).extend({
@@ -148,10 +153,17 @@ export default function MapPage() {
       if (z < MIN_PARCEL_ZOOM) {
         grp.clearLayers();
         viewPolys.current.clear();
+        setBwStatus({ loading: false, offline: false, needZoom: false });
         return;
       }
       const b = map.getBounds().pad(0.1);
-      const list = parcelsInBounds(b.getSouth(), b.getWest(), b.getNorth(), b.getEast());
+      // Baden-Württemberg: amtliche Flurstücke live vom LGL, sonst Katastermodell
+      const v = map.getBounds();
+      const bw = bwParcelsInView(v.getSouth(), v.getWest(), v.getNorth(), v.getEast(), z);
+      setBwStatus({ loading: bw.loading, offline: bw.offline, needZoom: bw.needZoom });
+      // Nur zeichnen, was (mit kleinem Rand) im Bild liegt
+      const inView = (p: Parcel) => b.contains(p.centroid) || b.intersects(L.latLngBounds(p.ring));
+      const list = [...parcelsInBounds(b.getSouth(), b.getWest(), b.getNorth(), b.getEast()), ...bw.parcels.filter(inView)];
       const skip = new Set<string>([...selectedRef.current.map((p) => p.id), ...ownRefData.current.map((p) => p.id)]);
       const want = new Set<string>();
       for (const p of list) {
@@ -173,10 +185,16 @@ export default function MapPage() {
       }
     };
     (map as unknown as { _renderView: () => void })._renderView = renderView;
-    map.on('moveend zoomend', renderView);
+    // Bewegungen bündeln: erst rendern, wenn die Karte kurz stillsteht
+    let timer = 0;
+    const scheduleRender = () => { window.clearTimeout(timer); timer = window.setTimeout(renderView, 150); };
+    map.on('moveend zoomend', scheduleRender);
+    const offBw = onBwTilesLoaded(scheduleRender);
     renderView();
 
     return () => {
+      window.clearTimeout(timer);
+      offBw();
       map.remove();
       mapRef.current = null;
     };
@@ -406,14 +424,23 @@ export default function MapPage() {
           </div>
         )}
         {drawing && <div className="map-hint draw">Klicken Sie die Eckpunkte Ihrer Fläche in die Karte, dann „Fertig“.</div>}
+        {!drawing && zoom >= MIN_PARCEL_ZOOM && bwStatus.needZoom && (
+          <div className="map-hint">In Baden-Württemberg werden amtliche Flurstücke ab Zoomstufe {BW_MIN_ZOOM} geladen.</div>
+        )}
+        {!drawing && zoom >= MIN_PARCEL_ZOOM && bwStatus.loading && (
+          <div className="map-hint">Amtliche Flurstücke werden vom LGL Baden-Württemberg geladen …</div>
+        )}
+        {!drawing && zoom >= MIN_PARCEL_ZOOM && !bwStatus.loading && bwStatus.offline && (
+          <div className="map-hint draw">LGL-Kataster nicht erreichbar. Es werden nur gespeicherte Beispiel-Flurstücke gezeigt.</div>
+        )}
 
         {hover && (
           <div className="hover-card">
             <div className="row between align-center" style={{ marginBottom: 2 }}>
-              <b>Flurstück {hover.label}</b>
+              <b>{hover.label}</b>
               {hover.isAlkis && (
                 <span className="badge gruen small enterprise-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                  <Database size={10} /> Amtlich erfasst (BW)
+                  <Database size={10} /> Amtlich
                 </span>
               )}
             </div>
@@ -452,6 +479,11 @@ export default function MapPage() {
                   <div><span className="big good">−{nf(totals.saving, 0)}</span> t CO₂e/a möglich</div>
                 </div>
                 {totals.moorHa === 0 && <div className="note warn">Keine Moorfläche in der Auswahl – Wiedervernässung und Paludikultur sind hier nicht sinnvoll.</div>}
+                {selected.some((p) => p.isAlkis) && (
+                  <p className="muted small" style={{ margin: 0 }}>
+                    Amtlich sind Grenzen, Kennzeichen, Fläche und Gemarkung. Boden, Nutzung und Wasserstand sind Schätzwerte aus der Moorbodenkarte.
+                  </p>
+                )}
                 <div className="list">
                   {selected.map((p) => (
                     <div key={p.id} className="parcel-card">

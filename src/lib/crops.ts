@@ -111,11 +111,11 @@ export const CROPS: Crop[] = [
     short: 'Pachterlös aus Solarpark',
     description: 'Photovoltaik auf dauerhaft wiedervernässten Moorböden. Landwirt verpachtet die Fläche an einen Projektierer, Wasserstände werden dauerhaft hoch gehalten. Genehmigung und Rechtsrahmen sind aufwendig.',
     moor: ['niedermoor', 'hochmoor'], waterLevelCm: 10,
-    yieldPerHa: 1, yieldUnit: 'ha Pacht', pricePerUnit: 2200, priceUnit: '€/ha Pacht',
+    yieldPerHa: 1, yieldUnit: 'ha Pacht', pricePerUnit: 2500, priceUnit: '€/ha Pacht (Orientierungswert Freiflächen-PV)',
     varCostPerHa: 150, establishmentPerHa: 1500, ramp: [0, 0, 0, 1],
     minPeatCm: 30, minAreaHa: 10, harvestMonths: [],
     machineCategories: [], productCategory: 'energie',
-    maturity: 'Pilot', marketRisk: 2, risks: 'Genehmigungsdauer, Netzanschluss, EEG-Rahmen; Mindestgröße.',
+    maturity: 'Pilot', marketRisk: 2, risks: 'Bebauungsplan, Netzanschluss und EEG-Zuschlag nötig; keine Schutzgebiete; Moor-PV-Sonderregeln sollen mit dem EEG 2027 entfallen.',
     labourHoursPerHa: 1, fundingTags: ['pv'],
   },
 ];

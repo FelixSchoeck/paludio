@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { CROPS, cropById } from '../lib/crops';
-import { analyze, emissionCurvePoints, emissionPerHa, rankCrops } from '../lib/calc';
+import { analyze, emissionCurvePoints, emissionPerHa, recommendCrops } from '../lib/calc';
 import { Badge, Empty, Field, PageHeader, eur, nf } from '../components/ui';
 import { LineChart } from '../components/Charts';
 import { CropIcon, MapPin, Globe2, AlertTriangle, Info, Save, Play, Check, ArrowRight, ChevronLeft } from '../components/Icons';
@@ -23,8 +23,9 @@ export default function Planner() {
   );
   const crop = cropById(draft.cropId) ?? CROPS[0];
   const res = useMemo(() => analyze(parcels, draft), [parcels, draft]);
-  const ranking = useMemo(() => (parcels.length ? rankCrops(parcels, draft) : []), [parcels, draft]);
-  const best = ranking.find((r) => r.fit.ok);
+  const options = useMemo(() => (parcels.length ? recommendCrops(parcels, draft) : []), [parcels, draft]);
+  const best = options.find((o) => o.recommended);
+  const selected = options.find((o) => o.crop.id === draft.cropId);
   const curve = useMemo(() => emissionCurvePoints(), []);
 
   const toggleParcel = (id: string) =>
@@ -68,11 +69,11 @@ export default function Planner() {
     !res.fit.ok ? { tone: 'bad', text: <>{crop.name} ist für diese Flächen nicht geeignet: {res.fit.reasons.join(', ')}.</> }
     : res.fit.level === 'bedingt' ? { tone: 'warn', text: <>{crop.name} ist nur bedingt geeignet: {res.fit.reasons.join(', ')}.</> }
     : res.deficitMm > 100 ? { tone: 'warn', text: <>Hohes Sommer-Wasserdefizit ({nf(res.deficitMm)} mm). Zuleitung und Speicher sind eingerechnet, Ertrag {nf(res.yieldFactor * 100)} %.</> }
-    : best && best.crop.id !== crop.id && best.kpis.npv > res.kpis.npv + 1000
-      ? { tone: '', text: <>Mit <b>{best.crop.name}</b> wäre der Kapitalwert um {eur(best.kpis.npv - res.kpis.npv)} höher. <button className="btn small" style={{ marginLeft: 6 }} onClick={() => setDraft({ cropId: best.crop.id, targetWlCm: null })}>Übernehmen</button></> }
+    : best && best.crop.id !== crop.id
+      ? { tone: '', text: <>Empfohlen ist <b>{best.crop.name}</b>: {best.pros[0] ?? 'beste Kombination aus Kapitalwert und Umsetzbarkeit'}. <button className="btn small" style={{ marginLeft: 6 }} onClick={() => setDraft({ cropId: best.crop.id, targetWlCm: null })}>Übernehmen</button></> }
       : null;
 
-  const maxNpv = Math.max(1, ...ranking.filter((r) => r.fit.ok).map((r) => r.kpis.npv));
+  const maxNpv = Math.max(1, ...options.filter((o) => o.fit.ok).map((o) => o.res.kpis.npv));
   const selHa = parcels.reduce((a, p) => a + p.areaHa, 0);
   const months = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
 
@@ -140,18 +141,19 @@ export default function Planner() {
             <>
               <div>
                 <h2 className="section-title">Was soll auf den nassen Flächen wachsen?</h2>
-                <span className="muted small">Sortiert nach Kapitalwert über {draft.horizonYears} Jahre</span>
+                <span className="muted small">Sortiert nach Kapitalwert über {draft.horizonYears} Jahre, gewichtet mit der Umsetzbarkeit (Reifegrad, Absatzmarkt, Genehmigungshürden)</span>
               </div>
               <div className="stack" style={{ gap: 8 }} role="radiogroup" aria-label="Nutzung">
-                {ranking.map((r) => {
-                  const c = r.crop;
+                {options.map((o) => {
+                  const c = o.crop;
+                  const r = o.res;
                   const on = draft.cropId === c.id;
                   return (
                     <button
                       key={c.id}
                       role="radio"
                       aria-checked={on}
-                      className={`crop-row ${on ? 'on' : ''} ${r.fit.ok ? '' : 'off'}`}
+                      className={`crop-row ${on ? 'on' : ''} ${o.fit.ok ? '' : 'off'}`}
                       onClick={() => setDraft({ cropId: c.id, targetWlCm: null })}
                     >
                       <span className="crop-radio" />
@@ -159,13 +161,15 @@ export default function Planner() {
                       <span className="crop-name">
                         <span className="row gap-s wrap">
                           <b>{c.name}</b>
-                          {best?.crop.id === c.id && <span className="badge gruen">Höchster Kapitalwert</span>}
-                          {r.fit.level === 'bedingt' && <span className="badge gelb">bedingt geeignet</span>}
+                          {o.recommended && <span className="badge gruen">Empfohlen</span>}
+                          {o.highestNpv && !o.recommended && <span className="badge grau">Höchster Kapitalwert</span>}
                         </span>
-                        <span className="muted small">{r.fit.ok ? c.short : r.fit.reasons[0]}</span>
+                        <span className="muted small">
+                          {o.fit.ok ? `Umsetzbarkeit ${o.feasibilityLabel} · ${o.cons[0] ?? c.short}` : o.fit.reasons[0]}
+                        </span>
                       </span>
                       <span className="crop-value">
-                        {r.fit.ok ? (
+                        {o.fit.ok ? (
                           <>
                             <span className={r.kpis.npv >= 0 ? '' : 'bad'}>{eur(r.kpis.npv)}</span>
                             <span className="crop-bar"><span style={{ width: `${Math.max(0, Math.round((r.kpis.npv / maxNpv) * 100))}%` }} /></span>
@@ -176,6 +180,29 @@ export default function Planner() {
                   );
                 })}
               </div>
+              {selected && (
+                <section className="why-box" aria-label={`Bewertung ${crop.name}`}>
+                  <h3>{selected.recommended ? `Warum ${crop.name} empfohlen wird` : `Bewertung ${crop.name}`}</h3>
+                  <div className="why-grid">
+                    {selected.pros.length > 0 && (
+                      <ul className="why-list pro">
+                        {selected.pros.map((t) => <li key={t}><Check size={14} strokeWidth={2.5} /> {t}</li>)}
+                      </ul>
+                    )}
+                    {selected.cons.length > 0 && (
+                      <ul className="why-list con">
+                        {selected.cons.map((t) => <li key={t}><AlertTriangle size={14} /> {t}</li>)}
+                      </ul>
+                    )}
+                  </div>
+                  {selected.fit.ok && (
+                    <p className="muted small" style={{ margin: 0 }}>
+                      Kapitalwert {eur(selected.res.kpis.npv)} × Umsetzbarkeit {Math.round(selected.feasibility * 100)} % = Bewertung {eur(selected.expected)}.
+                      {best && !selected.recommended && ` Die Empfehlung ${best.crop.name} erreicht ${eur(best.expected)}.`}
+                    </p>
+                  )}
+                </section>
+              )}
               <details className="crop-detail">
                 <summary><b>Steckbrief {crop.name}</b> <Badge tone={crop.maturity === 'etabliert' ? 'gruen' : crop.maturity === 'Pilot' ? 'gelb' : 'rot'}>{crop.maturity}</Badge></summary>
                 <p style={{ marginTop: 8 }}>{crop.description}</p>

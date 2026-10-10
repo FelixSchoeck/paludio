@@ -48,7 +48,7 @@ export default function Dashboard() {
   const totalHa = state.myParcels.reduce((a, p) => a + p.areaHa, 0);
   const hasParcels = state.myParcels.length > 0;
   const hasPlan = state.plans.length > 0 || !!status.project;
-  const submitted = state.applications.filter((a) => a.status === 'eingereicht');
+  const submitted = state.applications.filter((a) => a.status === 'eingereicht' || a.status === 'bewilligt');
   const drafts = state.applications.filter((a) => a.status === 'entwurf');
   const project = status.ready ? status : null;
 

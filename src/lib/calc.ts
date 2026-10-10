@@ -53,24 +53,26 @@ export function cropFit(crop: Crop, parcels: Parcel[]): CropFit {
   if (!ha) return { ok: false, level: 'nein', reasons: ['Keine Moorfläche ausgewählt'] };
   const typeHa = moor.filter((p) => crop.moor.includes(p.moorType)).reduce((a, p) => a + p.areaHa, 0);
   const peatAvg = moor.reduce((a, p) => a + p.peatDepthCm * p.areaHa, 0) / ha;
+  const typeLabel = crop.moor.map((m) => (m === 'niedermoor' ? 'Niedermoor' : 'Hochmoor')).join(' und ');
   const reasons: string[] = [];
   let level: CropFit['level'] = 'gut';
   if (typeHa / ha < 0.5) {
-    reasons.push(`Nur für ${crop.moor.map((m) => (m === 'niedermoor' ? 'Niedermoor' : 'Hochmoor')).join('/')}`);
+    reasons.push(`Nur für ${typeLabel} geeignet`);
     level = 'nein';
   } else if (typeHa / ha < 0.95) {
-    reasons.push('Nur auf Teilen der Fläche geeignet');
+    reasons.push(`Nur ${Math.round((typeHa / ha) * 100)} % der Fläche sind ${typeLabel}`);
     level = 'bedingt';
   }
   if (peatAvg < crop.minPeatCm) {
-    reasons.push(`Torfmächtigkeit unter ${crop.minPeatCm} cm`);
+    reasons.push(`Torfmächtigkeit Ø ${Math.round(peatAvg)} cm, benötigt mindestens ${crop.minPeatCm} cm`);
     level = 'nein';
   }
   if (ha < crop.minAreaHa) {
-    reasons.push(`Mindestgröße ${crop.minAreaHa} ha`);
-    level = level === 'nein' ? 'nein' : 'bedingt';
+    // Unter der Mindestgröße ist das Verfahren nicht wirtschaftlich bzw. nicht umsetzbar
+    reasons.push(`Mindestens ${crop.minAreaHa} ha nötig, Ihre Moorfläche: ${ha.toLocaleString('de-DE', { maximumFractionDigits: 1 })} ha`);
+    level = 'nein';
   }
-  return { ok: level !== 'nein', level, reasons: reasons.length ? reasons : ['Standort und Größe passen'] };
+  return { ok: level !== 'nein', level, reasons: reasons.length ? reasons : [`${typeLabel}, Ø ${Math.round(peatAvg)} cm Torf, ${ha.toLocaleString('de-DE', { maximumFractionDigits: 1 })} ha`] };
 }
 
 /* ---------- Plan-Berechnung ---------- */
@@ -171,13 +173,12 @@ export function analyze(parcels: Parcel[], draft: PlanDraft, cropOverride?: stri
     dikeM: targetWl <= 10 && moorHa ? Math.round(4 * Math.sqrt(moorHa * 10000) * 1.1) : 0,
   };
 
+  const baselineDb = parcels.reduce((a, p) => a + (p.moorType !== 'mineral' ? BASELINE_DB[p.landUse] * p.areaHa : 0), 0);
   const states = [...new Set(parcels.map((p) => p.bundesland))];
-  const funding = summarizeFunding({ states, areaHa, moorHa, crop, targetWlCm: targetWl, capex });
+  const funding = summarizeFunding({ states, areaHa, moorHa, crop, targetWlCm: targetWl, capex, baselineDb });
   const grants = draft.useFunding ? funding.oneTime : 0;
   const premiumAnnual = draft.useFunding ? funding.annual : 0;
   const premiumYears = draft.useFunding ? funding.annualYears : 0;
-
-  const baselineDb = parcels.reduce((a, p) => a + (p.moorType !== 'mineral' ? BASELINE_DB[p.landUse] * p.areaHa : 0), 0);
 
   const rows: YearRow[] = [];
   let cumNet = 0;
@@ -262,6 +263,95 @@ export function rankCrops(parcels: Parcel[], draft: PlanDraft) {
     if (a.fit.ok !== b.fit.ok) return a.fit.ok ? -1 : 1;
     return b.kpis.npv - a.kpis.npv;
   });
+}
+
+/* ---------- Empfehlung ---------- */
+
+export interface CropOption {
+  res: PlanResult;
+  crop: Crop;
+  fit: CropFit;
+  /** Umsetzbarkeit 0–1: Reifegrad, Marktrisiko, Eignung und besondere Hürden */
+  feasibility: number;
+  feasibilityLabel: 'hoch' | 'mittel' | 'gering';
+  /** Kapitalwert gewichtet mit der Umsetzbarkeit */
+  expected: number;
+  pros: string[];
+  cons: string[];
+  recommended: boolean;
+  highestNpv: boolean;
+}
+
+const MATURITY_FACTOR: Record<Crop['maturity'], number> = { etabliert: 1, Pilot: 0.8, Forschung: 0.6 };
+const MARKET_FACTOR: Record<Crop['marketRisk'], number> = { 1: 1, 2: 0.9, 3: 0.75 };
+/** Zusätzliche Hürden, die über Reifegrad und Markt hinausgehen */
+const SPECIAL: Record<string, { factor: number; note: string }> = {
+  moor_pv: {
+    factor: 0.6,
+    note: 'Nur mit Projektierer, Bebauungsplan, Netzanschluss und EEG-Zuschlag; nicht in Schutzgebieten. Die EEG-Novelle 2027 soll die Moor-PV-Sonderregeln streichen.',
+  },
+};
+
+const eurShort = (v: number) => (Math.abs(v) >= 1e6 ? `${(v / 1e6).toLocaleString('de-DE', { maximumFractionDigits: 2 })} Mio. €` : eur(v));
+
+/**
+ * Bewertet alle Nutzungen und begründet die Empfehlung.
+ * Reihenfolge: geeignete Optionen nach Kapitalwert × Umsetzbarkeit, ungeeignete zuletzt.
+ */
+export function recommendCrops(parcels: Parcel[], draft: PlanDraft): CropOption[] {
+  const options: CropOption[] = CROPS.map((crop) => {
+    const res = analyze(parcels, { ...draft, cropId: crop.id, targetWlCm: null }, crop.id);
+    const fit = res.fit;
+    const special = SPECIAL[crop.id];
+    const feasibility = fit.ok
+      ? MATURITY_FACTOR[crop.maturity] * MARKET_FACTOR[crop.marketRisk] * (fit.level === 'bedingt' ? 0.85 : 1) * (special?.factor ?? 1)
+      : 0;
+    const npv = res.kpis.npv;
+    const expected = !fit.ok ? -Infinity : npv >= 0 ? npv * feasibility : npv / Math.max(feasibility, 0.1);
+
+    const pros: string[] = [];
+    const cons: string[] = [];
+    if (!fit.ok) cons.push(...fit.reasons);
+    else if (fit.level === 'bedingt') cons.push(...fit.reasons);
+    else pros.push(`Standort passt: ${fit.reasons[0]}`);
+
+    const wl = res.targetWl;
+    const stufe = wl <= 10 ? 1 : wl <= 20 ? 2 : null;
+    if (crop.id === 'moor_pv') cons.push('Kein Palu-Ausgleich für Wert- und Ertragsverlust bei PV-Flächen, nur Beratung und Planung');
+    else if (stufe) pros.push(`Zielwasserstand ${wl} cm unter Flur: Vernässungsstufe ${stufe}, Ausgleich nach Palu möglich`);
+    else cons.push(`Zielwasserstand ${wl} cm: für Palu zu trocken (höchstens 20 cm) – kein Ausgleich, höhere Emissionen`);
+
+    if (crop.maturity === 'etabliert') pros.push(crop.marketRisk === 1 ? 'Etabliertes Verfahren mit bestehendem Absatzmarkt' : 'Etabliertes Verfahren');
+    else if (crop.maturity === 'Pilot') cons.push(crop.id === 'moor_pv' ? 'Pilotstadium: bisher nur wenige Moor-PV-Anlagen in Betrieb' : 'Pilotstadium: Technik und Abnehmer noch im Aufbau');
+    else cons.push('Forschungsstadium: Erträge und Preise noch unsicher');
+    if (crop.marketRisk === 3) cons.push('Marktpreis noch nicht etabliert');
+    if (special) cons.push(special.note);
+
+    if (npv < 0) cons.push(`Kapitalwert negativ (${eurShort(npv)}) über ${draft.horizonYears} Jahre`);
+    if (res.kpis.payback == null) cons.push(`Keine Amortisation innerhalb von ${draft.horizonYears} Jahren`);
+    else if (res.kpis.payback <= 8) pros.push(`Amortisation nach ${res.kpis.payback.toLocaleString('de-DE', { maximumFractionDigits: 1 })} Jahren`);
+    else if (res.kpis.payback > 15) cons.push(`Lange Kapitalbindung: Amortisation erst nach ${Math.round(res.kpis.payback)} Jahren`);
+
+    if (res.emissions.avoidedT > 0) pros.push(`Spart ${Math.round(res.emissions.avoidedT).toLocaleString('de-DE')} t CO₂e pro Jahr`);
+    if (res.funding.oneTime > 0) {
+      const parts = new Set(res.funding.chosen.flatMap((m) => m.program.covers ?? []));
+      const label = [parts.has('planning') && 'Planung', parts.has('waterworks') && 'Wasserbau', parts.has('establishment') && 'Etablierung'].filter(Boolean).join(', ');
+      pros.push(`${eurShort(res.funding.oneTime)} Zuschuss möglich${label ? ` (${label})` : ''}`);
+    }
+
+    return {
+      res, crop, fit, feasibility,
+      feasibilityLabel: feasibility >= 0.85 ? 'hoch' : feasibility >= 0.65 ? 'mittel' : 'gering',
+      expected, pros, cons, recommended: false, highestNpv: false,
+    };
+  });
+
+  options.sort((a, b) => (a.fit.ok !== b.fit.ok ? (a.fit.ok ? -1 : 1) : b.expected - a.expected));
+  const first = options.find((o) => o.fit.ok);
+  if (first) first.recommended = true;
+  const maxNpv = options.filter((o) => o.fit.ok).sort((a, b) => b.res.kpis.npv - a.res.kpis.npv)[0];
+  if (maxNpv) maxNpv.highestNpv = true;
+  return options;
 }
 
 export const defaultDraft = (): PlanDraft => ({

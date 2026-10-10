@@ -224,7 +224,7 @@ export function recommend(c: RecoContext): Reco[] {
   const crop = plan.crop;
   const target = plan.targetWl;
   const summer = calMonth >= 5 && calMonth <= 9;
-  const submitted = c.applications.some((a) => a.status === 'eingereicht');
+  const submitted = c.applications.some((a) => a.status === 'eingereicht' || a.status === 'bewilligt');
   const fmt = (n: number) => Math.round(n).toLocaleString('de-DE');
 
   if (phase.id === 'planung') {

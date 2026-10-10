@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import type {
   Application, Booking, Farm, Inquiry, Listing, Machine, Parcel, PlanDraft, Project, SavedPlan, Tenure,
 } from './types';
-import { defaultDraft } from './calc';
+import { analyze, defaultDraft } from './calc';
 import { SEED_LISTINGS, SEED_MACHINES } from './market';
 import { findMoorParcels } from './parcels';
 import { BW_ALKIS_PARCELS } from './alkis_bw';
@@ -46,7 +46,16 @@ const KEY = 'paludio.prototype.v1';
 function load(): AppState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return { ...initialState(), ...JSON.parse(raw) };
+    if (raw) {
+      const saved = { ...initialState(), ...JSON.parse(raw) } as AppState;
+      // Amtliche Stammdaten gespeicherter BW-Flurstücke aus dem aktuellen Katasterbestand übernehmen
+      const official = new Map(BW_ALKIS_PARCELS.map((p) => [p.id, p]));
+      saved.myParcels = saved.myParcels.map((p) => {
+        const o = official.get(p.id);
+        return o ? { ...p, gemarkung: o.gemarkung, alkis: o.alkis } : p;
+      });
+      return saved;
+    }
   } catch {
     /* ignore */
   }
@@ -84,6 +93,33 @@ interface Store {
   loadBwDemo: () => void;
   loadDemo: () => void;
   reset: () => void;
+}
+
+/** Beispielantrag für die Musterbetriebe: Palu Modul 2.B (Wasserbau), im offenen Fenster eingereicht */
+function demoApplication(parcels: Parcel[], draft: PlanDraft, submittedAt: string): Application {
+  const res = analyze(parcels, draft);
+  return {
+    id: uid('app'),
+    programId: 'palu_2b',
+    programName: 'Palu Modul 2.B – Wasserbau und Pegel',
+    parcelIds: parcels.map((p) => p.id),
+    createdAt: submittedAt,
+    submittedAt,
+    status: 'eingereicht',
+    amountRequested: Math.round(res.capex.waterworks),
+    data: {
+      measure: `Dauerhafte Wiedervernässung auf ${res.moorHa.toFixed(1).replace('.', ',')} ha durch Staue und Grabenverschlüsse, Zielwasserstand ${res.targetWl} cm unter Flur, anschließend ${res.crop.name}`,
+      totalCost: Math.round(res.capex.waterworks),
+      startDate: '2027-04-01',
+      note: '',
+      docs: { flurstuecke: true, kostenplan: true, thg: true, eigentum: true, nutzungsrecht: true, zustimmung: true, wasserrecht: true, umsetzung: true, hydro: true, monitoring: true, angebote: true },
+      confirmed: true,
+      costs: { planning: Math.round(res.capex.planning), waterworks: Math.round(res.capex.waterworks), establishment: Math.round(res.capex.establishment) },
+      targetWlCm: res.targetWl,
+      cropId: res.crop.id,
+      declarations: { noDoubleFunding: true, notStarted: true, kmu: true, deminimisEur: 0 },
+    },
+  };
 }
 
 const Ctx = createContext<Store | null>(null);
@@ -209,17 +245,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           draft,
           plans: [{ id: planId, name: 'Paludikultur Rohrkolben Federseemoor', createdAt: new Date().toISOString(), draft }],
           projects: [{ id: projectId, planId, name: 'Wiedervernässung Federsee Polder I', startDate: '2025-06-01', simMonth: 8, tasks: { ...doneTasks, e1: true } }],
-          applications: [{
-            id: uid('app'),
-            programId: 'bw_moorbauern',
-            programName: 'Baden-Württemberg: Moorbauernprogramm & Förderrichtlinie Moorschutz',
-            parcelIds: bwParcels.map((p) => p.id),
-            createdAt: '2025-06-10T08:30:00.000Z',
-            submittedAt: '2025-06-15T09:00:00.000Z',
-            status: 'eingereicht',
-            amountRequested: 385000,
-            data: { measure: 'Anstau Entwässerungsgräben & Typha-Etablierung', totalCost: 450000, startDate: '2025-10-01', note: 'Flst. 763, 3238, 3239', docs: {}, confirmed: true },
-          }],
+          applications: [demoApplication(bwParcels, draft, '2026-10-02T09:00:00.000Z')],
         }));
         say('Musterbetrieb „Hofgut Federsee“ (Baden-Württemberg) geladen');
       },
@@ -240,11 +266,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           draft,
           plans: [{ id: planId, name: 'Rohrkolben-Paludikultur Teufelsmoor', createdAt: new Date().toISOString(), draft }],
           projects: [{ id: projectId, planId, name: 'Rohrkolben-Paludikultur Teufelsmoor', startDate: '2025-09-01', simMonth: 13, tasks: { ...doneTasks, e1: true, e2: true } }],
-          applications: [{
-            id: uid('app'), programId: 'ni_invest', programName: 'Niedersachsen: Moorschutz & Klimaschutz – Wasserbau', parcelIds: parcels.map((p) => p.id),
-            createdAt: '2025-09-02T09:00:00.000Z', submittedAt: '2025-09-05T09:00:00.000Z', status: 'eingereicht', amountRequested: 0,
-            data: { measure: 'Wiedervernässung mit Stauen', totalCost: 0, startDate: '2026-03-01', note: '', docs: {}, confirmed: true },
-          }],
+          applications: [demoApplication(parcels, draft, '2026-10-05T09:00:00.000Z')],
         }));
         say('Demobetrieb „Moorhof Eickhorst“ geladen');
       },
@@ -276,13 +298,14 @@ export function useNow(ms = 1000) {
   return now;
 }
 
-/** Simulierter Bearbeitungsstand eines eingereichten Antrags (im Prototyp beschleunigt) */
-export function applicationStage(a: Application, now: number): { label: string; step: number; tone: 'grau' | 'blau' | 'gelb' | 'gruen' } {
-  if (a.status === 'entwurf' || !a.submittedAt) return { label: 'Entwurf', step: 0, tone: 'grau' };
-  const sec = (now - new Date(a.submittedAt).getTime()) / 1000;
-  if (sec < 15) return { label: 'Eingegangen', step: 1, tone: 'blau' };
-  if (sec < 40) return { label: 'In Prüfung', step: 2, tone: 'gelb' };
-  return { label: 'Bewilligt', step: 3, tone: 'gruen' };
+/** Bearbeitungsstand eines Antrags – vom Betrieb gepflegt, da die Einreichung im Portal der Bewilligungsstelle erfolgt */
+export function applicationStage(a: Application, _now?: number): { label: string; step: number; tone: 'grau' | 'blau' | 'gelb' | 'gruen' | 'rot' } {
+  switch (a.status) {
+    case 'eingereicht': return { label: 'Eingereicht', step: 1, tone: 'blau' };
+    case 'bewilligt': return { label: 'Bewilligt', step: 3, tone: 'gruen' };
+    case 'abgelehnt': return { label: 'Abgelehnt', step: 3, tone: 'rot' };
+    default: return { label: 'Entwurf', step: 0, tone: 'grau' };
+  }
 }
 
 export function bookingStage(b: Booking, now: number): { label: string; tone: 'blau' | 'gruen' } {

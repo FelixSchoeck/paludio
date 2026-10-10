@@ -49,6 +49,8 @@ export interface Farm {
   phone: string;
   iban: string;
   legalForm: string;
+  /** Anschrift des Betriebssitzes (Straße, PLZ, Ort) */
+  address?: string;
   /** Standort des Betriebs für Entfernungsberechnung (Maschinenmarkt) */
   location: LatLng;
   locationName: string;
@@ -87,7 +89,25 @@ export interface Project {
   tasks: Record<string, boolean>;
 }
 
-export type AppStatus = 'entwurf' | 'eingereicht';
+export type AppStatus = 'entwurf' | 'eingereicht' | 'bewilligt' | 'abgelehnt';
+
+export interface ApplicationParcelInfo {
+  /** Ende des laufenden Pachtvertrags (bestimmt bei Palu 3.B die Laufzeit) */
+  leaseEnd?: string;
+  /** seit mindestens 5 Jahren landwirtschaftlich genutzt (Palu 3.A/3.B) */
+  agriUse5y?: boolean;
+}
+
+export interface ApplicationDeclarations {
+  /** keine andere öffentliche Förderung für dieselbe Maßnahme (Palu Nr. 6.6) */
+  noDoubleFunding: boolean;
+  /** Maßnahme wurde noch nicht begonnen */
+  notStarted: boolean;
+  /** Unternehmen ist ein KMU */
+  kmu: boolean;
+  /** De-minimis-Beihilfen der letzten drei Jahre in € */
+  deminimisEur: number | null;
+}
 
 export interface Application {
   id: string;
@@ -105,6 +125,15 @@ export interface Application {
     note: string;
     docs: Record<string, boolean>;
     confirmed: boolean;
+    /** förderfähige Kosten nach Kostenteil */
+    costs?: { planning: number; waterworks: number; establishment: number };
+    targetWlCm?: number;
+    cropId?: string;
+    bodenrichtwert?: number | null;
+    parcelInfo?: Record<string, ApplicationParcelInfo>;
+    declarations?: ApplicationDeclarations;
+    /** Aktenzeichen bzw. Vorgangsnummer im Portal der Bewilligungsstelle */
+    portalRef?: string;
   };
 }
 
