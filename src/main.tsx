@@ -8,8 +8,7 @@ import MapPage from './pages/MapPage';
 import Planner from './pages/Planner';
 import Funding from './pages/Funding';
 import Operations from './pages/Operations';
-import Machines from './pages/Machines';
-import Products from './pages/Products';
+import Marketplace from './pages/Marketplace';
 import './style.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -23,8 +22,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="planer" element={<Planner />} />
             <Route path="foerderung" element={<Funding />} />
             <Route path="betrieb" element={<Operations />} />
-            <Route path="maschinen" element={<Machines />} />
-            <Route path="produkte" element={<Products />} />
+            <Route path="maschinen" element={<Marketplace />} />
+            <Route path="produkte" element={<Marketplace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

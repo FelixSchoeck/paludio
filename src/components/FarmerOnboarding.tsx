@@ -21,8 +21,11 @@ import {
   Euro,
   Info,
   Sparkles,
+  Check,
+  X,
 } from './Icons';
 import { Badge, nf } from './ui';
+import { Logo } from './Logo';
 
 interface Props {
   onClose?: () => void;
@@ -97,82 +100,88 @@ export default function FarmerOnboarding({ onClose }: Props) {
     if (onClose) onClose();
   };
 
-  return (
-    <div className="onboarding-overlay">
-      <div className="onboarding-modal card enterprise-box">
-        {/* Enterprise Modal Header */}
-        <div className="onboarding-header">
-          <div className="row between align-center">
-            <div className="row align-center gap-s">
-              <span className="badge dunkel enterprise-badge">
-                <Database size={13} /> PALUDIO ENTERPRISE
-              </span>
-              <span className="badge gruen enterprise-badge">
-                <ShieldCheck size={13} /> KATASTER-INITIATIVE 2026
-              </span>
-            </div>
-            {state.onboarded && onClose && (
-              <button className="btn small ghost" onClick={onClose}>
-                Schließen
-              </button>
-            )}
-          </div>
-          <h2 style={{ marginTop: 10, marginBottom: 4 }}>
-            Betriebs-Setup & Kataster-Onboarding
-          </h2>
-          <p className="muted small" style={{ margin: 0 }}>
-            Erfassen Sie Ihre Betriebsdaten, prüfen Sie amtliche Flurstücke und definieren Sie Ihre Ziele für die Wiedervernässung.
-          </p>
+  const STEPS = [
+    { n: 1 as const, label: 'Betrieb & Kataster', sub: 'Stammdaten und Bundesland' },
+    { n: 2 as const, label: 'Moor-Ausgangslage', sub: 'Flächen, Torf und Wasserstand' },
+    { n: 3 as const, label: 'Ziele & Förderung', sub: 'Was Sie erreichen wollen' },
+    { n: 4 as const, label: 'Flurstücke & Start', sub: 'Flächen prüfen und loslegen' },
+  ];
+  const current = STEPS[step - 1];
 
-          {/* Stepper Bar */}
-          <div className="stepper-bar" style={{ marginTop: 16 }}>
-            <div
-              className={`step-item ${step === 1 ? 'active' : step > 1 ? 'done' : ''}`}
-              onClick={() => setStep(1)}
-            >
-              <span className="step-num">{step > 1 ? <CheckCircle2 size={14} /> : '1'}</span>
-              <span className="step-label">1. Betrieb & Kataster</span>
-            </div>
-            <div
-              className={`step-item ${step === 2 ? 'active' : step > 2 ? 'done' : ''}`}
-              onClick={() => setStep(2)}
-            >
-              <span className="step-num">{step > 2 ? <CheckCircle2 size={14} /> : '2'}</span>
-              <span className="step-label">2. Moor-Ausgangslage</span>
-            </div>
-            <div
-              className={`step-item ${step === 3 ? 'active' : step > 3 ? 'done' : ''}`}
-              onClick={() => setStep(3)}
-            >
-              <span className="step-num">{step > 3 ? <CheckCircle2 size={14} /> : '3'}</span>
-              <span className="step-label">3. Ziele & Förderung</span>
-            </div>
-            <div
-              className={`step-item ${step === 4 ? 'active' : ''}`}
-              onClick={() => setStep(4)}
-            >
-              <span className="step-num">4</span>
-              <span className="step-label">4. Flurstücke & Setup</span>
-            </div>
-          </div>
+  return (
+    <div className="onboarding-screen" role="dialog" aria-modal="true" aria-labelledby="onb-title">
+      {/* Seitenspalte mit Schritten */}
+      <aside className="onboarding-side">
+        <div className="brand">
+          <Logo />
+          <span>
+            <div className="brand-name">Paludio</div>
+            <div className="brand-sub">Moor &amp; Paludikultur</div>
+          </span>
         </div>
 
-        {/* Modal Body */}
+        <div className="onboarding-intro">
+          <h2>Betrieb einrichten</h2>
+          <p>In vier kurzen Schritten zu Ihrem Moor-Kataster und den ersten Berechnungen.</p>
+        </div>
+
+        <ol className="onboarding-steps">
+          {STEPS.map((s) => (
+            <li key={s.n} className={step === s.n ? 'cur' : step > s.n ? 'done' : ''}>
+              <button type="button" onClick={() => setStep(s.n)} aria-current={step === s.n ? 'step' : undefined}>
+                <span className="journey-dot">{step > s.n ? <Check size={14} strokeWidth={2.5} /> : s.n}</span>
+                <span className="journey-text">
+                  <span className="journey-label">{s.label}</span>
+                  <span className="journey-detail">{s.sub}</span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ol>
+
+        <div className="onboarding-demo">
+          <span className="muted small">Erst einmal ausprobieren?</span>
+          <button
+            type="button"
+            className="btn small"
+            onClick={() => {
+              loadBwDemo();
+              if (onClose) onClose();
+            }}
+          >
+            <Sparkles size={14} /> Musterbetrieb Baden-Württemberg
+          </button>
+          <button
+            type="button"
+            className="btn small ghost"
+            onClick={() => {
+              loadDemo();
+              if (onClose) onClose();
+            }}
+          >
+            Musterbetrieb Teufelsmoor (NI)
+          </button>
+        </div>
+      </aside>
+
+      {/* Inhalt */}
+      <main className="onboarding-main">
+        <header className="onboarding-main-head">
+          <div>
+            <span className="muted small">Schritt {step} von 4</span>
+            <h1 id="onb-title">{current.label}</h1>
+          </div>
+          {state.onboarded && onClose && (
+            <button className="icon-btn" onClick={onClose} aria-label="Onboarding schließen">
+              <X size={20} />
+            </button>
+          )}
+        </header>
+
         <div className="onboarding-content">
           {/* STEP 1: Betrieb & Kataster */}
           {step === 1 && (
             <div className="stack gap">
-              <div className="enterprise-callout info">
-                <Info size={18} className="icon-inline" />
-                <div>
-                  <b>Offizielle Katasteranbindung für Baden-Württemberg</b>
-                  <p>
-                    Paludio greift in Baden-Württemberg direkt auf den amtlichen WFS-Katasterdienst des
-                    <b> Landesamts für Geoinformation und Landentwicklung (LGL BW)</b> zu. Für die weiteren 15 Bundesländer wird ein hochauflösendes Katastermodell simuliert.
-                  </p>
-                </div>
-              </div>
-
               <div className="grid-2">
                 <div>
                   <label className="field-label">Betriebsname *</label>
@@ -248,9 +257,9 @@ export default function FarmerOnboarding({ onClose }: Props) {
                 <div className="enterprise-callout success">
                   <Database size={18} className="icon-inline" />
                   <div>
-                    <b>Amtliches Liegenschaftskataster Baden-Württemberg aktiv:</b>
+                    <b>Amtliche Flurstücke verfügbar</b>
                     <p>
-                      Flurstücke werden im amtlichen Referenzsystem ETRS89 / EPSG:4258 mit bundesweit einheitlichem 20-stelligem Flurstückskennzeichen, amtlicher Fläche (m²) und Gemarkungsschlüssel geladen.
+                      Für Baden-Württemberg lädt Paludio Ihre Flurstücke direkt vom Landesamt für Geoinformation (LGL BW), mit amtlichem Kennzeichen und amtlicher Fläche.
                     </p>
                   </div>
                 </div>
@@ -258,9 +267,9 @@ export default function FarmerOnboarding({ onClose }: Props) {
                 <div className="enterprise-callout neutral">
                   <Layers size={18} className="icon-inline" />
                   <div>
-                    <b>Deterministische Kataster-Simulation aktiv:</b>
+                    <b>Katastermodell</b>
                     <p>
-                      Für {BUNDESLAENDER[bundesland]?.name} werden Flurstücke auf Basis von Schlagstrukturen und der Bodenkarte der organischen Böden (Thünen-Institut) abgebildet.
+                      Für {BUNDESLAENDER[bundesland]?.name} bildet Paludio Flurstücke aus einem Modell auf Basis der Moorbodenkarte des Thünen-Instituts ab. Amtliche Daten gibt es bisher nur für Baden-Württemberg.
                     </p>
                   </div>
                 </div>
@@ -612,7 +621,7 @@ export default function FarmerOnboarding({ onClose }: Props) {
                   <div>
                     <b>Keine initialen Flächen vorgeladen</b>
                     <p>
-                      Nach Abschluss des Onboardings gelangen Sie direkt in das Dashboard und können über das Modul „Karte & Flächen“ beliebige Flurstücke in ganz Deutschland auswählen.
+                      Nach der Einrichtung können Sie unter „Flächen“ beliebige Flurstücke in ganz Deutschland auswählen.
                     </p>
                   </div>
                 </div>
@@ -632,57 +641,25 @@ export default function FarmerOnboarding({ onClose }: Props) {
           )}
         </div>
 
-        {/* Modal Footer Controls */}
-        <div className="onboarding-footer">
-          <div className="row between align-center wrap gap">
-            <div className="row gap-s">
-              <button
-                className="btn ghost small"
-                onClick={() => {
-                  loadBwDemo();
-                  if (onClose) onClose();
-                }}
-                title="Lädt den baden-württembergischen Musterbetrieb mit amtlichen Flurstücken"
-              >
-                <Sparkles size={14} /> Musterbetrieb Baden-Württemberg laden
+        <footer className="onboarding-footer">
+          <div className="onboarding-footer-inner">
+            {step > 1 ? (
+              <button className="btn" onClick={() => setStep((s) => (s - 1) as typeof step)}>
+                <ChevronLeft size={16} /> Zurück
               </button>
-              <button
-                className="btn ghost small"
-                onClick={() => {
-                  loadDemo();
-                  if (onClose) onClose();
-                }}
-                title="Lädt den niedersächsischen Musterbetrieb Teufelsmoor"
-              >
-                Musterbetrieb Teufelsmoor (NI)
+            ) : <span />}
+            {step < 4 ? (
+              <button className="btn primary" onClick={() => setStep((s) => (s + 1) as typeof step)}>
+                Weiter: {STEPS[step].label} <ChevronRight size={16} />
               </button>
-            </div>
-
-            <div className="row gap">
-              {step > 1 && (
-                <button
-                  className="btn"
-                  onClick={() => setStep((s) => (s - 1) as typeof step)}
-                >
-                  <ChevronLeft size={16} /> Zurück
-                </button>
-              )}
-              {step < 4 ? (
-                <button
-                  className="btn primary"
-                  onClick={() => setStep((s) => (s + 1) as typeof step)}
-                >
-                  Weiter zu Schritt {step + 1} <ChevronRight size={16} />
-                </button>
-              ) : (
-                <button className="btn primary" onClick={handleFinish}>
-                  <CheckCircle2 size={16} /> Betriebs-Setup abschließen & Cockpit öffnen
-                </button>
-              )}
-            </div>
+            ) : (
+              <button className="btn primary" onClick={handleFinish}>
+                <CheckCircle2 size={16} /> Einrichtung abschließen
+              </button>
+            )}
           </div>
-        </div>
-      </div>
+        </footer>
+      </main>
     </div>
   );
 }

@@ -1,402 +1,205 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useMemo, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { applicationStage, useNow, useStore } from '../lib/store';
 import { analyze } from '../lib/calc';
-import { PHASES, TASKS, phaseAt } from '../lib/monitoring';
-import { Badge, Empty, eur, nf } from '../components/ui';
+import { cropById } from '../lib/crops';
+import { useProjectStatus, type Todo } from '../lib/project';
+import { eur, nf } from '../components/ui';
 import {
-  Layers,
   Leaf,
   ChartLine,
   Euro,
-  Droplet,
-  Tractor,
   Sparkles,
-  Info,
   Check,
   ArrowRight,
-  Search,
-  Plus,
-  FileText,
+  AlertTriangle,
+  Info,
   CheckCircle2,
+  Droplet,
 } from '../components/Icons';
+
+type StepState = 'done' | 'cur' | 'todo';
+
+function levelTile(t: Todo) {
+  if (t.level === 'kritisch') return <span className="icon-tile bad"><AlertTriangle size={16} /></span>;
+  if (t.level === 'wichtig') return <span className="icon-tile warn"><AlertTriangle size={16} /></span>;
+  if (t.level === 'positiv') return <span className="icon-tile"><CheckCircle2 size={16} /></span>;
+  if (t.taskId) return <span className="icon-tile water"><Droplet size={16} /></span>;
+  return <span className="icon-tile water"><Info size={16} /></span>;
+}
 
 export default function Dashboard() {
   const { state, loadBwDemo } = useStore();
   const now = useNow(5000);
-  const [params] = useSearchParams();
+  const status = useProjectStatus();
 
-  const [parcelFilter, setParcelFilter] = useState<'alle' | 'alkis' | 'moor'>('alle');
-  const [searchQuery, setSearchQuery] = useState(params.get('q') ?? '');
-
-  // Suche aus der Kopfzeile übernehmen
-  useEffect(() => setSearchQuery(params.get('q') ?? ''), [params]);
-
-  const activeProject = state.projects[0];
-  const activePlan = useMemo(() => {
-    if (activeProject) return state.plans.find((p) => p.id === activeProject.planId);
-    return state.plans[0];
-  }, [activeProject, state.plans]);
-
-  const activeParcels = useMemo(() => {
-    if (activePlan) return state.myParcels.filter((p) => activePlan.draft.parcelIds.includes(p.id));
-    return state.myParcels;
-  }, [activePlan, state.myParcels]);
-
-  const calcRes = useMemo(() => {
-    if (!activeParcels.length) return null;
-    return analyze(activeParcels, activePlan ? activePlan.draft : state.draft);
-  }, [activeParcels, activePlan, state.draft]);
-
-  const filteredParcels = useMemo(() => {
-    return state.myParcels.filter((p) => {
-      if (parcelFilter === 'alkis' && !p.isAlkis) return false;
-      if (parcelFilter === 'moor' && p.moorType === 'mineral') return false;
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchLabel = p.label.toLowerCase().includes(q);
-        const matchGmk = p.gemarkung.toLowerCase().includes(q);
-        const matchRef = p.alkis?.flurstueckskennzeichen.toLowerCase().includes(q) || false;
-        if (!matchLabel && !matchGmk && !matchRef) return false;
-      }
-      return true;
-    });
-  }, [state.myParcels, parcelFilter, searchQuery]);
-
-  const alkisCount = state.myParcels.filter((p) => p.isAlkis).length;
-  const moorCount = state.myParcels.filter((p) => p.moorType !== 'mineral').length;
-  const totalAreaHa = state.myParcels.reduce((a, p) => a + p.areaHa, 0);
-  const sources = [...new Set(state.myParcels.map((p) => p.alkis?.katasteramt).filter(Boolean))];
-
-  // Projektphase & offene Aufgaben
-  const month = activeProject?.simMonth ?? 0;
-  const phase = activeProject ? phaseAt(month) : null;
-  // Offene Aufgaben der aktuellen Phase – sind alle erledigt, die der nächsten Phase
-  const openTasks = useMemo(() => {
-    if (!activeProject || !phase) return [];
-    const from = PHASES.findIndex((p) => p.id === phase.id);
-    for (const ph of PHASES.slice(from)) {
-      const open = TASKS.filter((t) => t.phase === ph.id && !activeProject.tasks[t.id]);
-      if (open.length) return open.map((t) => ({ ...t, phaseLabel: ph.label }));
-    }
-    return [];
-  }, [activeProject, phase]);
-  const draftApps = state.applications.filter((a) => a.status === 'entwurf');
+  // Kennzahlen: aus dem laufenden Projekt, sonst aus dem aktuellen Planentwurf
+  const draftParcels = useMemo(() => {
+    const sel = state.myParcels.filter((p) => state.draft.parcelIds.includes(p.id));
+    return sel.length ? sel : state.myParcels;
+  }, [state.myParcels, state.draft.parcelIds]);
+  const draftRes = useMemo(
+    () => (draftParcels.length ? analyze(draftParcels, state.draft) : null),
+    [draftParcels, state.draft],
+  );
+  const res = status.res ?? draftRes;
 
   const farm = state.farm;
-  const meta = [
-    farm.legalForm && farm.owner ? `${farm.legalForm} · ${farm.owner}` : farm.owner || farm.legalForm,
-    farm.locationName,
-    farm.farmingType ? (farm.farmingType === 'oekologisch' ? `Öko (${farm.organicAssociation || 'Bio'})` : 'Konventionell') : null,
-  ].filter(Boolean) as string[];
+  const totalHa = state.myParcels.reduce((a, p) => a + p.areaHa, 0);
+  const hasParcels = state.myParcels.length > 0;
+  const hasPlan = state.plans.length > 0 || !!status.project;
+  const submitted = state.applications.filter((a) => a.status === 'eingereicht');
+  const drafts = state.applications.filter((a) => a.status === 'entwurf');
+  const project = status.ready ? status : null;
 
-  const npv = calcRes?.kpis.npv ?? 0;
+  // Ihr Weg: vier Schritte vom Flächenerfassen bis zum Betrieb
+  const steps: { label: string; cta: string; to: string; detail: ReactNode; state: StepState }[] = [];
+  const pushStep = (label: string, cta: string, to: string, done: boolean, detail: ReactNode) => {
+    const firstOpen = steps.every((s) => s.state === 'done');
+    steps.push({ label, cta, to, detail, state: done ? 'done' : firstOpen ? 'cur' : 'todo' });
+  };
+  pushStep('Flächen erfassen', 'Flächen wählen', '/karte', hasParcels,
+    hasParcels ? `${state.myParcels.length} ${state.myParcels.length === 1 ? 'Flurstück' : 'Flurstücke'} · ${nf(totalHa, 1)} ha` : 'Flurstücke auf der Karte wählen');
+  const planCrop = cropById(status.plan?.draft.cropId ?? state.plans[0]?.draft.cropId ?? '');
+  pushStep('Nutzung planen', 'Szenario berechnen', '/planer', hasPlan,
+    hasPlan && planCrop ? `${planCrop.name}${res ? ` · Kapitalwert ${eur(res.kpis.npv)}` : ''}` : 'Kultur und Wirtschaftlichkeit berechnen');
+  pushStep('Förderung beantragen', 'Förderung beantragen', '/foerderung', submitted.length > 0,
+    submitted.length > 0
+      ? `${submitted.length} ${submitted.length === 1 ? 'Antrag' : 'Anträge'} · ${applicationStage(submitted[0], now).label}`
+      : res?.hasMoor ? `bis ${eur(res.funding.oneTime)} möglich` : 'Programme passend zum Plan');
+  pushStep('Umsetzen & betreiben', 'Zum Betrieb', '/betrieb', !!project && project.phase.id === 'betrieb',
+    project ? `${project.phase.label} · Monat ${project.month}` : 'Projekt im Planer starten');
+
+  // Als Nächstes: offene Punkte aus dem Projekt, sonst der nächste Schritt des Weges
+  const openTodos: Todo[] = project ? project.todos.filter((t) => !t.done).slice(0, 3) : [];
+  const upcomingPhase = openTodos.find((t) => t.upcoming)?.upcoming;
+  const todoNote = upcomingPhase && openTodos.every((t) => t.upcoming || !t.taskId)
+    ? `Die aktuelle Phase ist erledigt. Als Nächstes: ${upcomingPhase}` : null;
+  const nextStep = steps.find((s) => s.state === 'cur');
+
+  const meta = [farm.owner, farm.locationName, totalHa > 0 ? `${nf(totalHa, 1)} ha` : null].filter(Boolean) as string[];
 
   return (
     <div className="page">
-      {/* Kopf */}
       <section className="cockpit-head">
-        <div className="stack" style={{ gap: 8, flex: '1 1 420px' }}>
-          <h1 style={{ margin: 0 }}>{farm.name || 'Ihr Betrieb'}</h1>
-          <div className="cockpit-meta">
-            {meta.map((m) => <span key={m}>{m}</span>)}
-            {farm.betriebsnummer && <span className="mono" style={{ fontSize: 12 }}>VVVO {farm.betriebsnummer}</span>}
-            {totalAreaHa > 0 && <span>{nf(totalAreaHa, 2)} ha im System</span>}
-          </div>
+        <div className="stack" style={{ gap: 6, flex: '1 1 420px' }}>
+          <h1 style={{ margin: 0 }}>{farm.name || 'Willkommen bei Paludio'}</h1>
+          {meta.length > 0 && <div className="cockpit-meta">{meta.map((m) => <span key={m}>{m}</span>)}</div>}
         </div>
-        <div className="row gap wrap">
-          <Link className="btn" to="/planer">Szenario berechnen</Link>
-          <Link className="btn primary" to="/karte"><Plus size={16} /> Fläche hinzufügen</Link>
-        </div>
+        {nextStep && (
+          <Link className="btn primary" to={nextStep.to}>{nextStep.cta} <ArrowRight size={16} /></Link>
+        )}
       </section>
 
-      {state.myParcels.length === 0 && (
-        <section className="card row between wrap gap" style={{ marginBottom: 24 }}>
-          <div className="row gap" style={{ alignItems: 'flex-start' }}>
-            <span className="icon-tile water"><Info size={16} /></span>
-            <div>
-              <b>Noch keine Flurstücke</b>
-              <div className="muted small">Wählen Sie auf der Karte Ihre Flächen aus oder laden Sie den Musterbetrieb, um THG-Einsparung, Kultur-Eignung und Förderung zu berechnen.</div>
-            </div>
-          </div>
-          <div className="row gap-s wrap">
-            <button className="btn" onClick={loadBwDemo}><Sparkles size={16} /> Musterbetrieb laden</button>
-            <Link className="btn primary" to="/karte">Zur Karte</Link>
-          </div>
-        </section>
-      )}
-
-      {/* Laufendes Vorhaben */}
-      {activeProject && phase ? (
-        <section className="card project-card" aria-labelledby="proj-h">
-          <div className="row between wrap gap" style={{ alignItems: 'flex-start' }}>
-            <div className="stack" style={{ gap: 4 }}>
-              <span className="muted small">Laufendes Vorhaben · Start {new Date(activeProject.startDate).toLocaleDateString('de-DE')}</span>
-              <h2 id="proj-h" style={{ margin: 0, fontSize: 20 }}>{activeProject.name}</h2>
-              {calcRes && (
-                <span>{calcRes.crop.name} auf {nf(calcRes.moorHa, 1)} ha {calcRes.moorHa > 0 ? 'Moorfläche' : 'Fläche'}</span>
-              )}
-            </div>
-            <Link className="next-step" to="/betrieb">
-              <span className="icon-tile water"><Droplet size={18} /></span>
-              <span className="next-step-text">
-                <span className="muted" style={{ fontSize: 12 }}>Nächster Schritt</span>
-                <b style={{ fontWeight: 600 }}>{openTasks[0]?.label ?? 'Alle Aufgaben erledigt'}</b>
-              </span>
-              <ArrowRight size={18} className="text-gruen" />
-            </Link>
-          </div>
-
-          <ol className="phase-track">
-            {PHASES.map((p, i) => {
-              const next = PHASES[i + 1]?.startMonth;
-              const isDone = next !== undefined && month >= next;
-              const isCur = p.id === phase.id;
-              const pct = isCur && next !== undefined ? Math.max(8, Math.round(((month - p.startMonth) / (next - p.startMonth)) * 100)) : isCur ? 100 : 0;
-              const range = next !== undefined ? `Monat ${p.startMonth}–${next - 1}` : `ab Monat ${p.startMonth}`;
-              return (
-                <li key={p.id} className={isDone ? 'done' : isCur ? 'cur' : ''} aria-current={isCur ? 'step' : undefined}>
-                  <span className="phase-bar">{isCur && <span style={{ width: `${pct}%` }} />}</span>
-                  <span className="phase-name">
-                    {isDone && <Check size={14} strokeWidth={2.5} className="text-gruen" />}
-                    {p.label}
-                  </span>
-                  <span className="phase-sub">{isCur ? `Monat ${month} · läuft` : range}</span>
-                </li>
-              );
-            })}
-          </ol>
-        </section>
-      ) : state.myParcels.length > 0 ? (
-        <section className="card row between wrap gap" style={{ marginBottom: 24 }}>
-          <div>
-            <b>Noch kein Projekt gestartet</b>
-            <div className="muted small">Berechnen Sie im Planer ein Szenario und starten Sie das Projekt. Paludio begleitet Sie dann von der Genehmigung bis zum Regelbetrieb.</div>
-          </div>
-          <Link className="btn primary" to="/planer">Zum Planer</Link>
-        </section>
-      ) : null}
-
-      {/* Kennzahlen */}
-      {calcRes && calcRes.hasMoor && (
+      {res?.hasMoor && (
         <section className="kpi-grid" aria-label="Kennzahlen">
-          <div className="kpi">
-            <span className="kpi-label"><Layers size={16} /> Moorfläche</span>
-            <span className="kpi-value">{nf(calcRes.moorHa, 1)} <span className="kpi-unit">ha</span></span>
-            <span className="kpi-hint">{activeParcels.length} {activeParcels.length === 1 ? 'Flurstück' : 'Flurstücke'}{alkisCount > 0 ? ' · amtlich erfasst' : ''}</span>
-          </div>
           <div className="kpi good">
             <span className="kpi-label"><Leaf size={16} /> THG-Minderung</span>
-            <span className="kpi-value">−{nf(calcRes.emissions.avoidedT, 0)} <span className="kpi-unit">t CO₂e/a</span></span>
-            <span className="kpi-hint">{nf(calcRes.emissions.baselinePerHa, 1)} → {nf(calcRes.emissions.scenarioPerHa, 1)} t je ha und Jahr</span>
+            <span className="kpi-value">−{nf(res.emissions.avoidedT, 0)} <span className="kpi-unit">t CO₂e/a</span></span>
+            <span className="kpi-hint">auf {nf(res.moorHa, 1)} ha Moor</span>
           </div>
           <div className="kpi">
             <span className="kpi-label"><ChartLine size={16} /> Kapitalwert</span>
             <span className="kpi-value">
-              {Math.abs(npv) >= 1e6 ? <>{nf(npv / 1e6, 2)} <span className="kpi-unit">Mio. €</span></> : eur(npv)}
+              {Math.abs(res.kpis.npv) >= 1e6 ? <>{nf(res.kpis.npv / 1e6, 2)} <span className="kpi-unit">Mio. €</span></> : eur(res.kpis.npv)}
             </span>
-            <span className="kpi-hint">
-              {calcRes.kpis.payback != null ? `Amortisation nach ${nf(calcRes.kpis.payback, 1)} Jahren` : 'Keine Amortisation im Zeitraum'}
-            </span>
+            <span className="kpi-hint">{res.kpis.payback != null ? `Amortisation nach ${nf(res.kpis.payback, 1)} Jahren` : 'keine Amortisation im Zeitraum'}</span>
           </div>
           <div className="kpi">
-            <span className="kpi-label"><Euro size={16} /> Förderpotenzial</span>
-            <span className="kpi-value">{nf(calcRes.funding.oneTime, 0)} <span className="kpi-unit">€</span></span>
-            <span className="kpi-hint">+ {eur(calcRes.funding.annual)} jährliche Flächenprämie</span>
+            <span className="kpi-label"><Euro size={16} /> Förderung</span>
+            <span className="kpi-value">{eur(res.funding.oneTime)}</span>
+            <span className="kpi-hint">+ {eur(res.funding.annual)} pro Jahr</span>
           </div>
         </section>
       )}
 
       <div className="row wrap" style={{ gap: 24, alignItems: 'flex-start' }}>
-        {/* Flurstücke */}
-        <section className="card" aria-labelledby="fl-h" style={{ flex: '999 1 520px', minWidth: 0, padding: 0, overflow: 'hidden' }}>
-          <div className="card-head">
-            <div>
-              <h2 id="fl-h" className="section-title">Flurstücke</h2>
-              <span className="muted small">Liegenschaftsdaten mit Boden- und Pegelwerten</span>
-            </div>
-            <div className="seg" role="group" aria-label="Filter">
-              <button className={parcelFilter === 'alle' ? 'on' : ''} aria-pressed={parcelFilter === 'alle'} onClick={() => setParcelFilter('alle')}>
-                Alle {state.myParcels.length}
-              </button>
-              <button className={parcelFilter === 'alkis' ? 'on' : ''} aria-pressed={parcelFilter === 'alkis'} onClick={() => setParcelFilter('alkis')}>
-                Amtlich {alkisCount}
-              </button>
-              <button className={parcelFilter === 'moor' ? 'on' : ''} aria-pressed={parcelFilter === 'moor'} onClick={() => setParcelFilter('moor')}>
-                Moorböden {moorCount}
-              </button>
-            </div>
+        {/* Als Nächstes */}
+        <section className="card stack" aria-labelledby="next-h" style={{ flex: '999 1 480px', minWidth: 0, gap: 16 }}>
+          <div>
+            <h2 id="next-h" className="section-title">Als Nächstes</h2>
+            {todoNote && <span className="muted small">{todoNote}</span>}
           </div>
 
-          {state.myParcels.length > 3 || searchQuery ? (
-            <div style={{ padding: '0 20px 12px' }}>
-              <label className="filter-bar" style={{ margin: 0 }}>
-                <Search size={16} className="muted" />
-                <span className="vh">Flurstücke filtern</span>
-                <input
-                  className="filter-input"
-                  placeholder="Flurstück, Kennzeichen oder Gemarkung"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-                {searchQuery && <button className="btn small ghost" onClick={() => setSearchQuery('')}>Zurücksetzen</button>}
-              </label>
-            </div>
-          ) : null}
-
-          {filteredParcels.length > 0 ? (
-            <div className="table-wrap">
-              <table className="enterprise-table" style={{ minWidth: 600 }}>
-                <thead>
-                  <tr>
-                    <th>Flurstück</th>
-                    <th className="num">Fläche</th>
-                    <th>Boden</th>
-                    <th>Wasserstand{calcRes ? ` → Ziel ${calcRes.targetWl} cm` : ''}</th>
-                    <th>Nutzung</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredParcels.map((p) => {
-                    const dry = p.waterLevelCm >= 60;
-                    return (
-                      <tr key={p.id}>
-                        <td>
-                          <Link to="/karte" style={{ fontWeight: 600, color: 'var(--text-main)' }}>{p.label}</Link>
-                          <div className="code-cell">{p.alkis?.flurstueckskennzeichen || p.gemarkung}</div>
-                        </td>
-                        <td className="num" style={{ fontWeight: 500 }}>{nf(p.areaHa, 2)} ha</td>
-                        <td>
-                          <Badge tone={p.moorType === 'mineral' ? 'grau' : 'braun'}>
-                            {p.moorType === 'niedermoor' ? 'Niedermoor' : p.moorType === 'hochmoor' ? 'Hochmoor' : 'Mineralboden'}
-                            {p.moorType !== 'mineral' && ` · ${p.peatDepthCm} cm`}
-                          </Badge>
-                        </td>
-                        <td>
-                          <div className="wl-cell">
-                            <span className={dry ? 'wl-track dry' : 'wl-track'}>
-                              <span style={{ width: `${Math.min(100, Math.round((p.waterLevelCm / 80) * 100))}%` }} />
-                            </span>
-                            <span style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', color: dry ? 'var(--bog-red)' : undefined, fontWeight: dry ? 500 : undefined }}>
-                              {p.waterLevelCm} cm u. Flur
-                            </span>
-                          </div>
-                        </td>
-                        <td>{p.tenure === 'pacht' ? 'Pacht' : 'Eigentum'}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div style={{ padding: '0 20px 20px' }}>
-              <Empty icon={<Layers size={32} />} title={state.myParcels.length ? 'Keine Flurstücke gefunden' : 'Noch keine Flurstücke'}>
-                {state.myParcels.length ? 'Für die gewählten Filter liegen keine Flurstücke vor.' : 'Wählen Sie Ihre Flächen auf der Karte aus.'}
-              </Empty>
+          {!hasParcels && (
+            <div className="todo">
+              <span className="icon-tile water"><Info size={16} /></span>
+              <div className="todo-text">
+                <b style={{ fontWeight: 600 }}>Flächen auswählen</b>
+                <span className="muted small">Wählen Sie Ihre Flurstücke auf der Karte oder laden Sie den Musterbetrieb, um alle Funktionen auszuprobieren.</span>
+                <div className="row gap-s wrap" style={{ marginTop: 8 }}>
+                  <Link className="btn small primary" to="/karte">Zur Karte</Link>
+                  <button className="btn small" onClick={loadBwDemo}><Sparkles size={14} /> Musterbetrieb laden</button>
+                </div>
+              </div>
             </div>
           )}
 
-          {state.myParcels.length > 0 && (
-            <div className="card-foot">
-              <span>Gesamt {nf(totalAreaHa, 2)} ha{sources.length ? ` · Quelle: ${sources.join(', ')}` : ''}</span>
-              <Link to="/karte" style={{ fontWeight: 500 }}>Auf der Karte zeigen</Link>
+          {hasParcels && !project && nextStep && (
+            <div className="todo">
+              <span className="icon-tile"><ArrowRight size={16} /></span>
+              <div className="todo-text">
+                <b style={{ fontWeight: 600 }}>{nextStep.label}</b>
+                <span className="muted small">{nextStep.detail}</span>
+                <div style={{ marginTop: 8 }}><Link className="btn small primary" to={nextStep.to}>Weiter</Link></div>
+              </div>
             </div>
+          )}
+
+          {drafts.map((a) => (
+            <div key={a.id} className="todo">
+              <span className="icon-tile warn"><Euro size={16} /></span>
+              <div className="todo-text">
+                <b style={{ fontWeight: 600 }}>Förderantrag fertigstellen</b>
+                <span className="muted small">{a.programName}</span>
+                <div style={{ marginTop: 6 }}><Link className="small" to="/foerderung" style={{ fontWeight: 500 }}>Antrag öffnen →</Link></div>
+              </div>
+            </div>
+          ))}
+
+          {openTodos.map((t) => (
+            <div key={t.id} className="todo">
+              {levelTile(t)}
+              <div className="todo-text">
+                <b style={{ fontWeight: 600 }}>{t.title}</b>
+                {t.text && <span className="muted small clamp-2">{t.text}</span>}
+                {t.cta && <div style={{ marginTop: 6 }}><Link className="small" to={t.cta.to} style={{ fontWeight: 500 }}>{t.cta.label} →</Link></div>}
+              </div>
+            </div>
+          ))}
+
+          {project && openTodos.length === 0 && drafts.length === 0 && (
+            <div className="todo">
+              <span className="icon-tile"><Check size={16} /></span>
+              <div className="todo-text">
+                <b style={{ fontWeight: 600 }}>Alles erledigt</b>
+                <span className="muted small">In der aktuellen Phase ist nichts offen.</span>
+              </div>
+            </div>
+          )}
+
+          {project && (
+            <Link to="/betrieb" className="small" style={{ fontWeight: 500 }}>Alle Aufgaben im Betrieb →</Link>
           )}
         </section>
 
-        {/* Rechte Spalte */}
-        <div className="stack" style={{ flex: '1 1 280px', minWidth: 0, gap: 24 }}>
-          <section className="card stack" aria-labelledby="todo-h" style={{ gap: 14 }}>
-            <h2 id="todo-h" className="section-title">Zu erledigen</h2>
-            {openTasks.length === 0 && draftApps.length === 0 && (
-              <div className="todo">
-                <span className="icon-tile"><CheckCircle2 size={16} /></span>
-                <div className="todo-text">
-                  <b style={{ fontWeight: 600 }}>Alles erledigt</b>
-                  <span className="muted small">{activeProject ? 'Keine offenen Aufgaben im Projekt.' : 'Starten Sie ein Projekt, um Aufgaben zu erhalten.'}</span>
-                </div>
-              </div>
-            )}
-            {draftApps.map((a) => (
-              <Link key={a.id} to="/foerderung" className="todo" style={{ color: 'inherit', textDecoration: 'none' }}>
-                <span className="icon-tile warn"><FileText size={16} /></span>
-                <span className="todo-text">
-                  <b style={{ fontWeight: 600 }}>Förderantrag fertigstellen</b>
-                  <span className="muted small">{a.programName} · Entwurf</span>
-                </span>
-              </Link>
+        {/* Ihr Weg */}
+        <section className="card" aria-labelledby="weg-h" style={{ flex: '1 1 300px', minWidth: 0 }}>
+          <h2 id="weg-h" className="section-title" style={{ marginBottom: 12 }}>Ihr Weg</h2>
+          <ol className="journey">
+            {steps.map((s, i) => (
+              <li key={s.label} className={s.state} aria-current={s.state === 'cur' ? 'step' : undefined}>
+                <Link to={s.to}>
+                  <span className="journey-dot">{s.state === 'done' ? <Check size={14} strokeWidth={2.5} /> : i + 1}</span>
+                  <span className="journey-text">
+                    <span className="journey-label">{s.label}</span>
+                    <span className="journey-detail">{s.detail}</span>
+                  </span>
+                </Link>
+              </li>
             ))}
-            {openTasks.slice(0, 3).map((t) => (
-              <Link key={t.id} to="/betrieb" className="todo" style={{ color: 'inherit', textDecoration: 'none' }}>
-                <span className="icon-tile water">{t.phase === 'bau' ? <Tractor size={16} /> : <Droplet size={16} />}</span>
-                <span className="todo-text">
-                  <b style={{ fontWeight: 600 }}>{t.label}</b>
-                  <span className="muted small">{t.phaseLabel}</span>
-                </span>
-              </Link>
-            ))}
-          </section>
-
-          <section className="card" aria-labelledby="gen-h">
-            <h2 id="gen-h" className="section-title" style={{ marginBottom: 8 }}>Genehmigungen &amp; Förderung</h2>
-            <div className="list-row">
-              <div>
-                <div style={{ fontWeight: 500 }}>Plangenehmigung § 68 WHG</div>
-                <div className="muted" style={{ fontSize: 12 }}>Untere Wasserbehörde</div>
-              </div>
-              <Badge tone="gelb">In Vorbereitung</Badge>
-            </div>
-            <div className="list-row">
-              <div>
-                <div style={{ fontWeight: 500 }}>ANK-Förderbescheid</div>
-                <div className="muted" style={{ fontSize: 12 }}>BfN / Bund · Wasserbau &amp; Pflanzgut</div>
-              </div>
-              <Badge tone="blau">Eingereicht</Badge>
-            </div>
-            <div className="list-row">
-              <div>
-                <div style={{ fontWeight: 500 }}>FFH-Verträglichkeit</div>
-                <div className="muted" style={{ fontSize: 12 }}>Naturschutzbehörde</div>
-              </div>
-              <Badge tone="gruen">Geprüft</Badge>
-            </div>
-            <div className="list-row">
-              <div>
-                <div style={{ fontWeight: 500 }}>GAP GLÖZ 2</div>
-                <div className="muted" style={{ fontSize: 12 }}>Erhalt von Moorböden</div>
-              </div>
-              <Badge tone="gruen">Konform</Badge>
-            </div>
-            {state.applications.filter((a) => a.status !== 'entwurf').map((a) => {
-              const stage = applicationStage(a, now);
-              return (
-                <div key={a.id} className="list-row">
-                  <div>
-                    <div style={{ fontWeight: 500 }}>{a.programName}</div>
-                    <div className="muted" style={{ fontSize: 12 }}>{eur(a.amountRequested)} beantragt</div>
-                  </div>
-                  <Badge tone={stage.tone}>{stage.label}</Badge>
-                </div>
-              );
-            })}
-          </section>
-
-          {state.bookings.length > 0 && (
-            <section className="card" aria-labelledby="book-h">
-              <h2 id="book-h" className="section-title" style={{ marginBottom: 8 }}>Maschinenbuchungen</h2>
-              {state.bookings.map((b) => (
-                <div key={b.id} className="list-row">
-                  <div>
-                    <div style={{ fontWeight: 500 }}>{b.machineName}</div>
-                    <div className="muted" style={{ fontSize: 12 }}>{b.from} bis {b.to}</div>
-                  </div>
-                  <b style={{ fontWeight: 600 }}>{eur(b.total)}</b>
-                </div>
-              ))}
-            </section>
-          )}
-        </div>
+          </ol>
+        </section>
       </div>
     </div>
   );

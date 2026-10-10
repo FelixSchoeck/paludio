@@ -5,7 +5,7 @@ import { analyze } from '../lib/calc';
 import { BUNDESLAENDER } from '../lib/geo';
 import { programById, type FundingMatch, type FundingProgram } from '../lib/funding';
 import type { Application } from '../lib/types';
-import { Badge, Empty, Field, Kpi, Modal, PageHeader, Tabs, eur, fdate, nf } from '../components/ui';
+import { Badge, Empty, Field, Modal, PageHeader, Tabs, eur, fdate, nf } from '../components/ui';
 import { Euro, FileText, CheckCircle2, Square, Check } from '../components/Icons';
 
 const statusTone = { passt: 'gruen', teilweise: 'gelb', nicht: 'grau' } as const;
@@ -59,28 +59,27 @@ export default function Funding() {
 
   return (
     <div className="page">
-      <PageHeader title="Förderungen" sub="Programme von EU, Bund, Ländern und Banken – automatisch auf Ihre Flächen und Ihren Plan abgestimmt." />
-
-      <div className="note">
-        <b>Hinweis:</b> Der Förderkatalog im Prototyp ist illustrativ. Fördersätze, Fristen und Stellen sind vor einem echten Antrag bei der zuständigen Behörde zu verifizieren.
-      </div>
+      <PageHeader title="Förderung" sub="Programme von EU, Bund, Ländern und Banken, abgestimmt auf Ihre Flächen und Ihren Plan." />
 
       {res.hasMoor ? (
-        <div className="kpi-grid">
-          <Kpi label="Berechnet für" value={`${nf(res.moorHa, 1)} ha Moor`} hint={`${res.crop.name} · ${[...new Set(parcels.map((p) => BUNDESLAENDER[p.bundesland].name))].join(', ')}`} />
-          <Kpi label="Einmalige Förderung" value={eur(res.funding.oneTime)} hint={`${nf(res.kpis.grantShare * 100)} % der Investition`} tone="good" />
-          <Kpi label="Jährliche Prämien" value={eur(res.funding.annual)} hint={res.funding.annualYears ? `über ${res.funding.annualYears} Jahre` : 'keine'} tone="good" />
-          <Kpi label="Passende Programme" value={String(matches.filter((m) => m.status !== 'nicht' && m.program.kind !== 'info').length)} hint="inkl. teilweise passender" />
-        </div>
+        <section className="card funding-summary">
+          <span className="icon-tile"><Euro size={18} /></span>
+          <div>
+            <div className="funding-summary-main"><b>{eur(res.funding.oneTime)}</b> einmalig <span className="muted">+</span> <b>{eur(res.funding.annual)}</b> pro Jahr möglich</div>
+            <div className="muted small">
+              {res.crop.name} auf {nf(res.moorHa, 1)} ha · {[...new Set(parcels.map((p) => BUNDESLAENDER[p.bundesland].name))].join(', ')} · deckt {nf(res.kpis.grantShare * 100)} % der Investition
+            </div>
+          </div>
+        </section>
       ) : (
-        <div className="note warn">
+        <div className="note warn" style={{ marginBottom: 24 }}>
           Ohne ausgewählte Moorflächen können Förderungen nicht zugeschnitten werden. <Link to="/karte"><b>Flächen auf der Karte wählen →</b></Link>
         </div>
       )}
 
       <div className="row between wrap">
         <Tabs value={tab} onChange={setTab} items={[
-          { id: 'passend', label: 'Passende Förderungen' },
+          { id: 'passend', label: `Passend (${matches.filter((m) => m.status !== 'nicht' && m.program.kind !== 'info').length})` },
           { id: 'alle', label: `Alle Programme (${matches.length})` },
           { id: 'antraege', label: `Meine Anträge (${state.applications.length})` },
         ]} />
@@ -100,37 +99,38 @@ export default function Funding() {
             const existing = state.applications.find((a) => a.programId === p.id);
             return (
               <article key={p.id} className="card fund-card">
-                <div className="row between wrap">
-                  <div className="row gap wrap">
-                    <Badge tone={statusTone[m.status]}>{statusLabel[m.status]}</Badge>
-                    <Badge tone="blau">{p.provider}{p.states !== 'ALL' ? ` · ${p.states.map((s) => s).join('/')}` : ''}</Badge>
-                    <Badge>{kindLabel[p.kind]}</Badge>
+                <div className="fund-head">
+                  <div style={{ minWidth: 0 }}>
+                    <div className="row gap-s wrap" style={{ marginBottom: 6 }}>
+                      <Badge tone={statusTone[m.status]}>{statusLabel[m.status]}</Badge>
+                      {dl !== null && dl < 90 && <Badge tone={dl < 30 ? 'rot' : 'gelb'}>{dl > 0 ? `Frist in ${dl} Tagen` : 'Frist abgelaufen'}</Badge>}
+                    </div>
+                    <h3 style={{ margin: 0 }}>{p.name}</h3>
+                    <div className="muted small">
+                      {p.provider}{p.states !== 'ALL' ? ` (${p.states.join('/')})` : ''} · {kindLabel[p.kind]} · {p.authority}
+                    </div>
                   </div>
-                  <div className="row gap-s">
-                    {dl !== null ? <Badge tone={dl < 30 ? 'rot' : dl < 90 ? 'gelb' : 'grau'}>Frist {fdate(p.deadline)} ({dl > 0 ? `in ${dl} Tagen` : 'abgelaufen'})</Badge> : <Badge tone="gruen">laufende Antragstellung</Badge>}
-                  </div>
-                </div>
-                <h3>{p.name}</h3>
-                <p>{p.summary}</p>
-                <div className="fund-meta">
-                  <div><span className="muted small">Stelle</span><br />{p.authority}</div>
-                  <div><span className="muted small">Aufwand</span><br />{p.effort}</div>
                   {m.status !== 'nicht' && (m.oneTime > 0 || m.annual > 0) && (
-                    <div><span className="muted small">Für Ihren Plan</span><br />
-                      {m.oneTime > 0 && <b>{eur(m.oneTime)} einmalig</b>}{m.oneTime > 0 && m.annual > 0 && ' + '}
-                      {m.annual > 0 && <b>{eur(m.annual)}/Jahr × {m.years}</b>}
+                    <div className="fund-amount">
+                      {m.oneTime > 0 && <b>{eur(m.oneTime)}</b>}
+                      {m.annual > 0 && <b>{m.oneTime > 0 ? '+ ' : ''}{eur(m.annual)}/Jahr</b>}
+                      <span className="muted small">{m.oneTime > 0 && m.annual === 0 ? 'einmalig' : m.annual > 0 ? `über ${m.years} Jahre` : ''}</span>
                     </div>
                   )}
                 </div>
-                <ul className="reasons">{m.reasons.map((r) => <li key={r} className={m.status === 'passt' ? 'ok' : m.status === 'teilweise' ? 'warn' : 'no'}>{r}</li>)}</ul>
+                <p style={{ margin: '12px 0' }}>{p.summary}</p>
+                <details className="small">
+                  <summary className="muted" style={{ fontWeight: 500 }}>Warum {m.status === 'passt' ? 'das passt' : m.status === 'teilweise' ? 'das nur teilweise passt' : 'das nicht passt'} · Frist {dl !== null ? fdate(p.deadline) : 'laufend'} · Aufwand {p.effort}</summary>
+                  <ul className="reasons">{m.reasons.map((r) => <li key={r} className={m.status === 'passt' ? 'ok' : m.status === 'teilweise' ? 'warn' : 'no'}>{r}</li>)}</ul>
+                </details>
                 {p.kind !== 'info' && m.status !== 'nicht' && (
-                  <div className="row gap">
+                  <div className="row gap wrap" style={{ marginTop: 12 }}>
                     {existing ? (
                       <button className="btn" onClick={() => { setTab('antraege'); }}>Antrag ansehen ({applicationStage(existing, now).label})</button>
                     ) : (
                       <button className="btn primary" onClick={() => startApplication(m)}>Antrag vorbereiten</button>
                     )}
-                    <span className="muted small">{p.docs.length} Nachweise · Daten aus Plan & Flächen vorausgefüllt</span>
+                    <span className="muted small">{p.docs.length} Nachweise · Daten werden aus Plan und Flächen übernommen</span>
                   </div>
                 )}
               </article>

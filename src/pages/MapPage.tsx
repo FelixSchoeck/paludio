@@ -48,7 +48,7 @@ export default function MapPage() {
   const [hover, setHover] = useState<Parcel | null>(null);
   const [drawing, setDrawing] = useState(false);
   const [drawCount, setDrawCount] = useState(0);
-  const [tab, setTab] = useState<'auswahl' | 'meine'>('auswahl');
+  const [tab, setTab] = useState<'auswahl' | 'meine'>(state.myParcels.length ? 'meine' : 'auswahl');
   const [query, setQuery] = useState('');
   const [remote, setRemote] = useState<Suggestion[]>([]);
   const [searching, setSearching] = useState(false);
@@ -76,6 +76,11 @@ export default function MapPage() {
     });
     mapRef.current = map;
     map.zoomControl.setPosition('topright');
+    // Mit eigenen Flächen direkt dorthin springen
+    if (state.myParcels.length) {
+      const bounds = L.latLngBounds(state.myParcels.flatMap((p) => p.ring));
+      map.fitBounds(bounds, { maxZoom: 15, padding: [60, 60] });
+    }
 
     const MoorGrid = (L.GridLayer as unknown as { extend: (o: object) => new (o?: object) => L.GridLayer }).extend({
       createTile(coords: L.Coords) {
@@ -424,22 +429,13 @@ export default function MapPage() {
       </div>
 
       <aside className="map-panel">
-        <Tabs value={tab} onChange={setTab} items={[{ id: 'auswahl', label: `Auswahl (${selected.length})` }, { id: 'meine', label: `Meine Flächen (${state.myParcels.length})` }]} />
+        <Tabs value={tab} onChange={setTab} items={[{ id: 'meine', label: `Meine Flächen (${state.myParcels.length})` }, { id: 'auswahl', label: `Auswahl (${selected.length})` }]} />
 
         {tab === 'auswahl' && (
           <div className="panel-body">
             {selected.length === 0 ? (
               <div className="stack">
                 <p className="muted">Klicken Sie Flurstücke in der Karte an, um sie auszuwählen. Mehrere Flurstücke können kombiniert werden.</p>
-                <div className="enterprise-callout info">
-                  <Database size={16} />
-                  <div>
-                    <b>Amtliches Liegenschaftskataster Baden-Württemberg aktiv:</b>
-                    <p style={{ margin: 0 }}>
-                      Flurstücke in Baden-Württemberg (Federseemoor, Wurzacher Ried, Pfrunger Ried) basieren zu 100 % auf amtlichen Katasterdaten der Landesvermessung Baden-Württemberg. Für die weiteren 15 Bundesländer werden Katastergrenzen hochpräzise simuliert.
-                    </p>
-                  </div>
-                </div>
                 <h4>Moorregionen entdecken</h4>
                 <div className="chips">
                   {MOOR_REGIONS.map((r) => (
@@ -524,6 +520,12 @@ export default function MapPage() {
                         <div className="code-cell" style={{ fontSize: '0.74rem' }}>{p.alkis.flurstueckskennzeichen}</div>
                       )}
                       <div className="muted">{p.gemarkung} · {nf(p.areaHa, 2)} ha</div>
+                      {p.moorType !== 'mineral' && (
+                        <div className="kv">
+                          <span>Torf</span><b>{p.peatDepthCm} cm</b>
+                          <span>Wasserstand heute</span><b>{p.waterLevelCm} cm unter Flur</b>
+                        </div>
+                      )}
                       <div className="row gap wrap">
                         <Badge tone={moorTone(p.moorType)}>{moorLabel[p.moorType]}</Badge>
                         <select className="mini-select" value={p.tenure ?? 'eigentum'} onChange={(e) => updateParcel(p.id, { tenure: e.target.value as 'eigentum' | 'pacht' })}>

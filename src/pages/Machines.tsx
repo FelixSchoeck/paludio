@@ -5,12 +5,11 @@ import { MACHINE_CATEGORIES, machineCategory } from '../lib/market';
 import { cropById } from '../lib/crops';
 import { haversineKm } from '../lib/geo';
 import type { Machine } from '../lib/types';
-import { Badge, Empty, Field, Modal, PageHeader, Tabs, eur, fdate, nf } from '../components/ui';
+import { Badge, Empty, Field, Modal, Tabs, eur, fdate, nf } from '../components/ui';
 import {
   Tractor,
   Calendar,
   Star,
-  Info,
   MachineIcon,
 } from '../components/Icons';
 
@@ -53,8 +52,7 @@ export default function Machines() {
   }, [machines, cat, operator, maxKpa, radius, q, sort, state.farm.location]);
 
   return (
-    <div className="page">
-      <PageHeader title="Maschinenmarkt" sub="Paludi-Maschinen mit geringem Bodendruck leihen oder die eigene Technik anbieten – von Mähraupe bis Bagger." />
+    <div>
       <Tabs value={tab} onChange={setTab} items={[
         { id: 'finden', label: 'Maschinen finden' },
         { id: 'buchungen', label: `Meine Buchungen (${state.bookings.length})` },
@@ -71,33 +69,36 @@ export default function Machines() {
               </button>
             ))}
           </div>
-          {activeCrop && activeCrop.machineCategories.length > 0 && (
-            <div className="note">
-              <Info size={16} className="icon-inline" /> Für <b>{activeCrop.name}</b> empfohlen: {activeCrop.machineCategories.map((c) => machineCategory(c)?.label).join(', ')}.
-            </div>
-          )}
-          <div className="card filters">
-            <Field label="Suche"><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, Anbieter, Ort" /></Field>
-            <Field label={`Max. Bodendruck: ${maxKpa} kPa`} hint="Für nasse Moorstandorte ≤ 20 kPa empfohlen">
-              <input type="range" min={8} max={40} value={maxKpa} onChange={(e) => setMaxKpa(Number(e.target.value))} />
-            </Field>
-            <Field label="Umkreis">
-              <select value={radius} onChange={(e) => setRadius(Number(e.target.value))}>
-                <option value={0}>Ganz Deutschland</option><option value={50}>50 km</option><option value={100}>100 km</option><option value={200}>200 km</option><option value={400}>400 km</option>
-              </select>
-            </Field>
-            <Field label="Fahrer">
-              <select value={operator} onChange={(e) => setOperator(e.target.value as typeof operator)}>
-                <option value="alle">egal</option><option value="mit">mit Fahrer möglich</option>
-              </select>
-            </Field>
-            <Field label="Sortierung">
-              <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)}>
-                <option value="distanz">Entfernung</option><option value="preis">Preis</option><option value="bewertung">Bewertung</option>
-              </select>
-            </Field>
+          <div className="filter-row">
+            <label className="filter-bar" style={{ margin: 0, flex: '1 1 260px' }}>
+              <span className="vh">Maschinen suchen</span>
+              <input className="filter-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, Anbieter oder Ort" />
+            </label>
+            <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} aria-label="Sortierung">
+              <option value="distanz">Nächste zuerst</option><option value="preis">Günstigste zuerst</option><option value="bewertung">Beste Bewertung</option>
+            </select>
           </div>
-          <div className="muted small">Entfernungen ab Betriebsstandort: {state.farm.locationName}. {list.length} Treffer.</div>
+          <details className="more-filters">
+            <summary>Weitere Filter{maxKpa < 40 || radius || operator !== 'alle' ? ' · aktiv' : ''}</summary>
+            <div className="filters" style={{ marginTop: 12 }}>
+              <Field label={`Max. Bodendruck: ${maxKpa} kPa`} hint="Für nasse Moorstandorte ≤ 20 kPa empfohlen">
+                <input type="range" min={8} max={40} value={maxKpa} onChange={(e) => setMaxKpa(Number(e.target.value))} />
+              </Field>
+              <Field label="Umkreis">
+                <select value={radius} onChange={(e) => setRadius(Number(e.target.value))}>
+                  <option value={0}>Ganz Deutschland</option><option value={50}>50 km</option><option value={100}>100 km</option><option value={200}>200 km</option><option value={400}>400 km</option>
+                </select>
+              </Field>
+              <Field label="Fahrer">
+                <select value={operator} onChange={(e) => setOperator(e.target.value as typeof operator)}>
+                  <option value="alle">egal</option><option value="mit">mit Fahrer möglich</option>
+                </select>
+              </Field>
+            </div>
+          </details>
+          <div className="muted small" style={{ margin: '12px 0 0' }}>
+            {list.length} Treffer · Entfernung ab {state.farm.locationName}{activeCrop ? ` · „empfohlen“ = passend für ${activeCrop.name}` : ''}
+          </div>
           {list.length === 0 && <Empty icon={<Tractor size={36} />} title="Keine Maschinen gefunden">Erweitern Sie Umkreis oder Bodendruck.</Empty>}
           <div className="machine-grid">
             {list.map(({ m, dist }) => {

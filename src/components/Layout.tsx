@@ -2,13 +2,13 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import FarmerOnboarding from './FarmerOnboarding';
+import { Logo } from './Logo';
 import {
   Home,
   Map,
   ChartLine,
   Euro,
   Activity,
-  Tractor,
   ShoppingBag,
   Building2,
   Sparkles,
@@ -19,50 +19,33 @@ import {
 
 const NAV_GROUPS = [
   {
-    label: 'Übersicht',
+    label: null,
+    items: [{ to: '/', label: 'Cockpit', icon: Home, end: true, also: [] as string[] }],
+  },
+  {
+    label: 'Ihr Projekt',
     items: [
-      { to: '/', label: 'Cockpit', icon: Home, end: true },
-      { to: '/karte', label: 'Karte & Flurstücke', icon: Map },
+      { to: '/karte', label: 'Flächen', icon: Map, also: [] as string[] },
+      { to: '/planer', label: 'Planer', icon: ChartLine, also: [] as string[] },
+      { to: '/foerderung', label: 'Förderung', icon: Euro, also: [] as string[] },
+      { to: '/betrieb', label: 'Betrieb', icon: Activity, also: [] as string[] },
     ],
   },
   {
-    label: 'Projekt',
-    items: [
-      { to: '/planer', label: 'Planer & Szenarien', icon: ChartLine },
-      { to: '/foerderung', label: 'Förderung', icon: Euro },
-      { to: '/betrieb', label: 'Betrieb & Pegel', icon: Activity },
-    ],
-  },
-  {
-    label: 'Märkte',
-    items: [
-      { to: '/maschinen', label: 'Maschinenmarkt', icon: Tractor },
-      { to: '/produkte', label: 'Produktmarkt', icon: ShoppingBag },
-    ],
+    label: 'Handel',
+    items: [{ to: '/maschinen', label: 'Marktplatz', icon: ShoppingBag, also: ['/produkte'] }],
   },
 ];
 
 const PAGE_TITLES: Record<string, string> = {
   '/': 'Cockpit',
-  '/karte': 'Karte & Flurstücke',
-  '/planer': 'Planer & Szenarien',
+  '/karte': 'Flächen',
+  '/planer': 'Planer',
   '/foerderung': 'Förderung',
-  '/betrieb': 'Betrieb & Pegel',
-  '/maschinen': 'Maschinenmarkt',
-  '/produkte': 'Produktmarkt',
+  '/betrieb': 'Betrieb',
+  '/maschinen': 'Marktplatz',
+  '/produkte': 'Marktplatz',
 };
-
-export function Logo({ size = 34 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden>
-      <rect width="64" height="64" rx="14" fill="#2e6a3b" />
-      <path d="M8 44c6-3 10-3 16 0s10 3 16 0 8-2 16-1v13a8 8 0 0 1-8 8H16a8 8 0 0 1-8-8z" fill="#5fa8c4" />
-      <path d="M24 42V18M24 18c-3 2-4 5-4 8M24 18c3 2 4 5 4 8" stroke="#bfe3b4" strokeWidth="3.5" strokeLinecap="round" fill="none" />
-      <path d="M41 42V13" stroke="#f1d9a8" strokeWidth="3.5" strokeLinecap="round" />
-      <rect x="37.5" y="16" width="7" height="14" rx="3.5" fill="#e2b76a" />
-    </svg>
-  );
-}
 
 function initials(name?: string) {
   if (!name) return 'B';
@@ -144,13 +127,14 @@ export default function Layout() {
         )}
 
         <nav aria-label="Hauptnavigation">
-          {NAV_GROUPS.map((g) => (
-            <div key={g.label} className="nav-group">
-              <span className="nav-group-label">{g.label}</span>
+          {NAV_GROUPS.map((g, gi) => (
+            <div key={gi} className="nav-group">
+              {g.label && <span className="nav-group-label">{g.label}</span>}
               {g.items.map((n) => {
                 const Icon = n.icon;
+                const alsoActive = n.also.some((p) => loc.pathname.startsWith(p));
                 return (
-                  <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => (isActive ? 'nav on' : 'nav')}>
+                  <NavLink key={n.to} to={n.to} end={'end' in n ? n.end : undefined} className={({ isActive }) => (isActive || alsoActive ? 'nav on' : 'nav')}>
                     <span className="nav-ic"><Icon size={18} strokeWidth={1.8} /></span>
                     {n.label}
                     {n.to === '/foerderung' && openApplications > 0 && <span className="nav-count">{openApplications}</span>}
@@ -167,9 +151,11 @@ export default function Layout() {
             {hasAlkis ? 'Amtliche Katasterdaten' : 'Kataster-Modell'}
           </span>
           <span className="side-foot-sub">
-            {hasAlkis
-              ? 'LGL Baden-Württemberg · Stand Q1/2026 · INVEKOS synchronisiert'
-              : 'Amtliche Vermessungsdaten derzeit für Baden-Württemberg verfügbar'}
+            {hasAlkis ? 'LGL Baden-Württemberg · Stand Q1/2026' : 'Amtliche Daten derzeit nur für Baden-Württemberg'}
+          </span>
+          <span className="proto-pill">Prototyp</span>
+          <span className="side-foot-sub">
+            Förder-, Markt- und Pegeldaten sind Beispielwerte. Vor echten Anträgen bei der zuständigen Stelle prüfen.
           </span>
         </div>
       </aside>

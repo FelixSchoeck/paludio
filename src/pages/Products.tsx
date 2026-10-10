@@ -5,7 +5,7 @@ import { PRICE_BENCHMARK, PRODUCT_CATEGORIES, productCategory } from '../lib/mar
 import { CROPS, cropById } from '../lib/crops';
 import { haversineKm } from '../lib/geo';
 import type { Inquiry, Listing, ListingType } from '../lib/types';
-import { Badge, Empty, Field, Modal, PageHeader, Tabs, eur, fdate, nf } from '../components/ui';
+import { Badge, Empty, Field, Modal, Tabs, eur, fdate, nf } from '../components/ui';
 import {
   ProductIcon,
   Package,
@@ -60,11 +60,7 @@ export default function Products() {
   }, [state.listings, myCrop]);
 
   return (
-    <div className="page">
-      <PageHeader
-        title="Produktmarkt für Paludikultur"
-        sub="Rohstoffe und Produkte aus nassen Moorböden vermarkten oder beziehen – von Rohrkolben-Dämmstoffen über Reet und Torfmoos bis zu regionalen Moor-Zertifikaten."
-      />
+    <div>
 
       <Tabs
         value={activeTab}
