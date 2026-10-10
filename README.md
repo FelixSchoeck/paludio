@@ -10,7 +10,7 @@ Live auf GitHub Pages: **https://felixschoeck.github.io/paludio/**
 
 ### 1. Deutschlandweite Kartierung & Flurstücksauswahl (`/karte`)
 - **Abdeckung ganz Deutschland**: Interaktive Karte mit Leaflet, OpenStreetMap- und hochauflösendem Luftbild-Modus.
-- **Moorboden-Layer**: Hoch- und Niedermoor-Kulisse (angelehnt an die Kulisse der organischen Böden des Thünen-Instituts) visualisiert Mächtigkeiten und Moortypen in Echtzeit über Canvas-Rasterung.
+- **Moorboden-Layer**: Thünen-Kulisse organischer Böden (2023), als Kartenebene direkt vom WMS des Thünen-Atlas; für Berechnungen als Vektorkacheln mit Bodenkategorie und Torfmächtigkeitsklasse mitgeliefert.
 - **Flurstücksebene (Kataster)**: Bei Hineinzoomen (Zoom 14+) werden einzelne Flurstücke mit Kennzeichen, Gemarkung, Flächengröße (ha), aktuellem Wasserflurabstand, Torfmächtigkeit und Entwässerungsart angezeigt und können per Klick ausgewählt werden.
 - **Eigene Flächen zeichnen**: Polygon-Zeichenmodus für benutzerdefinierte Flächengrenzen.
 - **Ort- & Moorregionssuche**: Schnellsprung zu bekannten Moorgebieten (z. B. Teufelsmoor, Donaumoos, Peenetal, Emsland, Drömling, Rhinluch) oder Volltextsuche via Nominatim/OSM.
@@ -51,6 +51,18 @@ Live auf GitHub Pages: **https://felixschoeck.github.io/paludio/**
 - **Direktanfragen**: Integriertes Anfragemodal zur Vereinbarung von Liefermengen und Konditionen.
 
 ---
+
+## Datengrundlagen
+
+| Wert | Quelle | Hinweis |
+|---|---|---|
+| Flurstücke BW (Grenzen, Kennzeichen, amtliche Fläche, Gemarkung) | LGL Baden-Württemberg, INSPIRE-WFS ALKIS (dl-de/by-2-0) | live ab Zoomstufe 15, im Browser 90 Tage zwischengespeichert |
+| Flurstücke übrige Länder | Katastermodell | keine amtlichen Daten |
+| Moor ja/nein, Bodenkategorie, Torfmächtigkeitsklasse | Thünen-Institut, Kulisse organischer Böden 2023 (CC BY 4.0, Working Paper 212) | Vektorkacheln (auf ca. 2 m vereinfacht); Flurstück gilt als Moor, wenn ≥ 50 % der Fläche organisch sind; Torf als Klassenmitte |
+| Wasserstand, heutige Nutzung | Angabe des Betriebs (Messung, Gutachten, Sammelantrag) | ohne Angabe rechnet der Planer mit einer sichtbaren, änderbaren Annahme (Standard: Grünland intensiv, 50 cm unter Flur) |
+| Förderprogramme | Förderrichtlinie Palu u. a., mit Quelle und Stand je Programm | Anträge werden nur lokal vorbereitet, nie übertragen |
+
+Die Vektorkacheln werden mit `python scripts/build_kulisse.py public/data/kulisse` aus dem WFS des Thünen-Atlas neu erzeugt (ca. 15 MB, 2.643 Kacheln).
 
 ## Technische Architektur
 

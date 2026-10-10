@@ -39,6 +39,26 @@ export const BASELINE_DB: Record<LandUse, number> = {
   acker: 520, gruenland_intensiv: 470, gruenland_extensiv: 210, brache: 0,
 };
 
+/* ---------- Heutige Nutzung und Wasserstand ---------- */
+
+/**
+ * Typische Entwässerungstiefe je Nutzung (Jahresmittel, cm unter Flur) – Planannahme,
+ * solange der Betrieb keinen gemessenen Wasserstand eingetragen hat.
+ */
+export const TYPICAL_WL: Record<LandUse, number> = { acker: 70, gruenland_intensiv: 50, gruenland_extensiv: 35, brache: 25 };
+export const DEFAULT_LAND_USE: LandUse = 'gruenland_intensiv';
+const notGiven = (s?: string) => !s || s === 'schaetzung' || s === 'modell';
+
+/** Heutige Nutzung: Angabe des Betriebs, sonst die Planannahme */
+export function currentUse(p: Parcel, assumed: LandUse = DEFAULT_LAND_USE): LandUse {
+  return notGiven(p.sources?.landUse) ? assumed : p.landUse;
+}
+
+/** Heutiger Wasserstand: Angabe des Betriebs, sonst typischer Wert für die (angenommene) Nutzung */
+export function currentWl(p: Parcel, assumed: LandUse = DEFAULT_LAND_USE): number {
+  return notGiven(p.sources?.water) ? TYPICAL_WL[currentUse(p, assumed)] : p.waterLevelCm;
+}
+
 /* ---------- Eignung ---------- */
 
 export interface CropFit {
@@ -102,6 +122,8 @@ export interface PlanResult {
   mineralHa: number;
   crop: Crop;
   targetWl: number;
+  /** Planannahme für die heutige Nutzung von Flurstücken ohne Angabe */
+  assumedLandUse: LandUse;
   yieldFactor: number;
   deficitMm: number;
   fit: CropFit;
@@ -154,8 +176,9 @@ export function analyze(parcels: Parcel[], draft: PlanDraft, cropOverride?: stri
   let baseT = 0;
   let scenT = 0;
   for (const p of moorParcels) {
-    baseT += emissionPerHa(p.waterLevelCm, p.peatDepthCm, p.landUse) * p.areaHa;
-    scenT += emissionPerHa(targetWl, p.peatDepthCm, p.landUse) * p.areaHa;
+    const use = currentUse(p, draft.assumedLandUse);
+    baseT += emissionPerHa(currentWl(p, draft.assumedLandUse), p.peatDepthCm, use) * p.areaHa;
+    scenT += emissionPerHa(targetWl, p.peatDepthCm, use) * p.areaHa;
   }
   const avoidedT = Math.max(0, baseT - scenT);
 
@@ -173,7 +196,7 @@ export function analyze(parcels: Parcel[], draft: PlanDraft, cropOverride?: stri
     dikeM: targetWl <= 10 && moorHa ? Math.round(4 * Math.sqrt(moorHa * 10000) * 1.1) : 0,
   };
 
-  const baselineDb = parcels.reduce((a, p) => a + (p.moorType !== 'mineral' ? BASELINE_DB[p.landUse] * p.areaHa : 0), 0);
+  const baselineDb = parcels.reduce((a, p) => a + (p.moorType !== 'mineral' ? BASELINE_DB[currentUse(p, draft.assumedLandUse)] * p.areaHa : 0), 0);
   const states = [...new Set(parcels.map((p) => p.bundesland))];
   const funding = summarizeFunding({ states, areaHa, moorHa, crop, targetWlCm: targetWl, capex, baselineDb });
   const grants = draft.useFunding ? funding.oneTime : 0;
@@ -231,6 +254,7 @@ export function analyze(parcels: Parcel[], draft: PlanDraft, cropOverride?: stri
 
   return {
     hasMoor: moorHa > 0,
+    assumedLandUse: draft.assumedLandUse ?? DEFAULT_LAND_USE,
     parcels,
     areaHa, moorHa, mineralHa: areaHa - moorHa,
     crop, targetWl, yieldFactor, deficitMm: deficit,

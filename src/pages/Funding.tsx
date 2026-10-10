@@ -17,6 +17,8 @@ import {
   type DocId, type FundingMatch, type FundingProgram,
 } from '../lib/funding';
 import type { Application, Farm, Parcel } from '../lib/types';
+import { estimateSummary, sourceLabel, sourcesOf } from '../components/ParcelFacts';
+import { isEstimate, landUseLabel } from '../lib/parcels';
 import { Badge, Empty, Field, Modal, PageHeader, Tabs, eur, fdate, nf } from '../components/ui';
 import { Euro, FileText, CheckCircle2, Square, Check, Download, ArrowRight } from '../components/Icons';
 
@@ -68,10 +70,11 @@ function computeRequest(prog: FundingProgram | undefined, app: Application, parc
     const lines: RequestCalc['lines'] = [];
     for (const p of parcels) {
       const years = yearsForParcel(p, app);
-      const db = BASELINE_DB[p.landUse] * p.areaHa * factor;
+      const useGiven = !isEstimate(sourcesOf(p).landUse);
+      const db = useGiven ? BASELINE_DB[p.landUse] * p.areaHa * factor : 0;
       const amount = years == null ? 0 : db * years;
       total += amount;
-      lines.push({ label: `${p.label}: ${eur(db)}/Jahr × ${years ?? '?'} Jahre`, amount });
+      lines.push({ label: useGiven ? `${p.label}: ${eur(db)}/Jahr × ${years ?? '?'} Jahre` : `${p.label}: heutige Nutzung fehlt`, amount });
     }
     return { lines, total, note: `Schätzung aus dem Deckungsbeitrag der heutigen Nutzung${factor > 1 ? ' inkl. 20 Prozentpunkte Geschwindigkeitsbonus' : ''}. Maßgeblich ist der Kompensationsrechner der Rentenbank.` };
   }
@@ -107,6 +110,8 @@ function validate(prog: FundingProgram | undefined, app: Application, parcels: P
     if (missing.length) e.push(`5 Jahre landwirtschaftliche Nutzung bestätigen (${missing.map((p) => p.label).join(', ')})`);
   }
   if (prog?.id === 'palu_3b') {
+    const noUse = parcels.filter((p) => isEstimate(sourcesOf(p).landUse));
+    if (noUse.length) e.push(`Heutige Nutzung unter „Meine Flächen“ angeben (${noUse.map((p) => p.label).join(', ')}) – Grundlage des Ausgleichs`);
     const noEnd = parcels.filter((p) => p.tenure === 'pacht' && !app.data.parcelInfo?.[p.id]?.leaseEnd);
     if (noEnd.length) e.push(`Pachtende angeben (${noEnd.map((p) => p.label).join(', ')})`);
   }
@@ -129,13 +134,16 @@ const esc = (v: unknown) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&
 function buildDocument(prog: FundingProgram | undefined, app: Application, parcels: Parcel[], farm: Farm, req: RequestCalc, res: PlanResult | null): string {
   const docs = (prog?.docs ?? []).filter((d) => docApplies(d, parcels));
   const ha = parcels.reduce((a, p) => a + p.areaHa, 0);
+  const est = estimateSummary(parcels);
   const wl = app.data.targetWlCm;
   const stufe = wl == null ? '–' : wl <= 10 ? 'Vernässungsstufe 1 (≤ 10 cm)' : wl <= 20 ? 'Vernässungsstufe 2 (≤ 20 cm)' : 'keine (über 20 cm)';
   const decl = app.data.declarations;
   const rows = parcels.map((p) => {
     const k = p.alkis ? parseKennzeichen(p.alkis.flurstueckskennzeichen) : null;
     const info = app.data.parcelInfo?.[p.id];
-    return `<tr><td>${esc(p.alkis?.flurstueckskennzeichen ?? p.label)}</td><td>${esc(p.gemarkung)}</td><td>${k && k.flur > 0 ? k.flur : '–'}</td><td>${esc(k ? k.nummer : p.label)}</td><td style="text-align:right">${nf(p.alkis?.amtlicheFlaecheQm ? p.alkis.amtlicheFlaecheQm / 10000 : p.areaHa, 4)} ha</td><td>${p.tenure === 'pacht' ? `Pacht${info?.leaseEnd ? ' bis ' + fdate(info.leaseEnd) : ''}` : 'Eigentum'}</td><td>${info?.agriUse5y ? 'ja' : '–'}</td></tr>`;
+    const src = sourcesOf(p);
+    const soil = `${p.soilCategory ?? p.moorType}${p.moorType !== 'mineral' ? `, Torf ${p.peatClass ?? p.peatDepthCm + ' cm'}` : ''}${p.soilCategory ? ' (Thünen-Kulisse)' : ''}`;
+    return `<tr><td>${esc(p.alkis?.flurstueckskennzeichen ?? p.label)}</td><td>${esc(p.gemarkung)}</td><td>${k && k.flur > 0 ? k.flur : '–'}</td><td>${esc(k ? k.nummer : p.label)}</td><td style="text-align:right">${nf(p.alkis?.amtlicheFlaecheQm ? p.alkis.amtlicheFlaecheQm / 10000 : p.areaHa, 4)} ha</td><td>${p.tenure === 'pacht' ? `Pacht${info?.leaseEnd ? ' bis ' + fdate(info.leaseEnd) : ''}` : 'Eigentum'}</td><td>${info?.agriUse5y ? 'ja' : '–'}</td><td>${esc(soil)}</td><td>${isEstimate(src.water) ? 'keine Angabe' : `${p.waterLevelCm} cm<br><small>${esc(sourceLabel(src.water))}</small>`}</td><td>${isEstimate(src.landUse) ? 'keine Angabe' : `${esc(landUseLabel(p.landUse))}<br><small>${esc(sourceLabel(src.landUse))}</small>`}</td></tr>`;
   }).join('');
   return `<!doctype html><html lang="de"><head><meta charset="utf-8"><title>${esc(prog?.name ?? app.programName)} – Antragsunterlagen</title>
 <style>body{font:14px/1.5 system-ui,sans-serif;color:#18211c;max-width:900px;margin:32px auto;padding:0 24px}h1{font-size:22px}h2{font-size:16px;margin-top:28px;border-bottom:1px solid #ccc;padding-bottom:4px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:6px 8px;text-align:left;vertical-align:top}th{background:#f4f5f1}.muted{color:#58635c}@media print{body{margin:0}}</style></head><body>
@@ -145,7 +153,7 @@ function buildDocument(prog: FundingProgram | undefined, app: Application, parce
 <tr><th>Betrieb</th><td>${esc(farm.name)}</td></tr><tr><th>Antragsteller/in</th><td>${esc(farm.owner)}</td></tr><tr><th>Rechtsform</th><td>${esc(farm.legalForm)}</td></tr>
 <tr><th>Anschrift</th><td>${esc(farm.address)}</td></tr><tr><th>Betriebsnummer</th><td>${esc(farm.betriebsnummer)}</td></tr><tr><th>E-Mail / Telefon</th><td>${esc(farm.email)} / ${esc(farm.phone)}</td></tr>
 <tr><th>IBAN</th><td>${esc(farm.iban)}</td></tr><tr><th>KMU</th><td>${decl?.kmu ? 'ja' : 'nein'}</td></tr><tr><th>De-minimis (3 Jahre)</th><td>${decl?.deminimisEur != null ? eur(decl.deminimisEur) : '–'}</td></tr></table>
-<h2>2. Flächen (${parcels.length} Flurstücke, ${nf(ha, 2)} ha)</h2><table><tr><th>Flurstückskennzeichen</th><th>Gemarkung</th><th>Flur</th><th>Flurstück</th><th>Amtliche Fläche</th><th>Nutzungsrecht</th><th>≥ 5 J. landw. genutzt</th></tr>${rows}</table>
+<h2>2. Flächen (${parcels.length} Flurstücke, ${nf(ha, 2)} ha)</h2><table><tr><th>Flurstückskennzeichen</th><th>Gemarkung</th><th>Flur</th><th>Flurstück</th><th>Amtliche Fläche</th><th>Nutzungsrecht</th><th>≥ 5 J. landw. genutzt</th><th>Boden</th><th>Wasserstand heute</th><th>Nutzung heute</th></tr>${rows}</table>${est.any ? `<p class="muted">Hinweis: Fehlende Angaben ersetzen kein hydrologisches Gutachten, keine Wasserstandsnachweise und keinen Sammelantrag.</p>` : ''}
 <h2>3. Vorhaben</h2><table>
 <tr><th>Maßnahme</th><td>${esc(app.data.measure)}</td></tr><tr><th>Künftige Nutzung</th><td>${esc(cropById(app.data.cropId ?? '')?.name ?? '–')}</td></tr>
 <tr><th>Zielwasserstand (Jahresmittel)</th><td>${wl ?? '–'} cm unter Flur – ${stufe}</td></tr>
@@ -582,6 +590,12 @@ function Wizard({
               <Field label="Vorgangsnummer im Portal (optional)"><input type="text" value={app.data.portalRef ?? ''} onChange={(e) => set({ portalRef: e.target.value })} /></Field>
             )}
             {errors.length > 0 && <div className="note warn"><b>Noch offen:</b><ul style={{ margin: '6px 0 0' }}>{errors.map((e) => <li key={e}>{e}</li>)}</ul></div>}
+            {estimateSummary(selected).any && (
+              <div className="note">
+                <b>Fehlende Flächenangaben.</b> Wasserstand oder Nutzung sind bei einigen Flurstücken nicht angegeben.
+                Die Bewilligungsstelle verlangt Nachweise (z. B. hydrologisches Gutachten, Pegelmessung, Sammelantrag). <Link to="/karte">Werte unter „Meine Flächen“ eintragen →</Link>
+              </div>
+            )}
             <p className="muted small" style={{ margin: 0 }}>
               Paludio reicht nicht selbst ein. Laden Sie die Unterlagen herunter und stellen Sie den Antrag im Portal{prog?.portal ? <> der <a href={prog.portal} target="_blank" rel="noreferrer">Bewilligungsstelle</a></> : ' der Bewilligungsstelle'}. Danach markieren Sie ihn hier als eingereicht.
             </p>

@@ -1,3 +1,4 @@
+import { currentWl } from './calc';
 import type { Application, Listing, Machine, Project } from './types';
 import type { PlanResult } from './calc';
 import { emissionPerHa } from './calc';
@@ -131,7 +132,7 @@ export function simSeed(project: Project): number {
 export function simParams(project: Project, plan: PlanResult): SimParams {
   const moor = plan.parcels.filter((p) => p.moorType !== 'mineral');
   const ha = moor.reduce((a, p) => a + p.areaHa, 0) || 1;
-  const wl0 = moor.reduce((a, p) => a + p.waterLevelCm * p.areaHa, 0) / ha || 50;
+  const wl0 = moor.reduce((a, p) => a + currentWl(p, plan.assumedLandUse) * p.areaHa, 0) / ha || 50;
   return { seed: simSeed(project), wl0, target: plan.targetWl, deficit: plan.deficitMm, startDate: project.startDate };
 }
 

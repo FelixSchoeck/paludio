@@ -17,6 +17,17 @@ export interface AlkisMeta {
   source: 'LGL_BW_ALKIS_WFS' | 'LGL_BW_ALKIS_OPEN';
 }
 
+/** Herkunft eines Flächenwerts */
+export type AttrSource = 'kulisse' | 'modell' | 'schaetzung' | 'angabe' | 'messung' | 'gutachten' | 'sammelantrag';
+
+export interface ParcelSources {
+  /** Moor ja/nein und Moortyp */
+  moor: AttrSource;
+  peat: AttrSource;
+  water: AttrSource;
+  landUse: AttrSource;
+}
+
 export interface Parcel {
   /** interner, stabiler Schlüssel */
   id: string;
@@ -39,6 +50,12 @@ export interface Parcel {
   /** Ob das Flurstück aus amtlichem ALKIS-Kataster stammt (Baden-Württemberg) */
   isAlkis?: boolean;
   alkis?: AlkisMeta;
+  /** Bodenkategorie laut Thünen-Kulisse, z. B. „Niedermoorboden“ */
+  soilCategory?: string;
+  /** Torfmächtigkeitsklasse laut Thünen-Kulisse, z. B. „TM2 (30–70 cm)“ */
+  peatClass?: string;
+  /** Herkunft der Bodenwerte; fehlt bei älteren Daten = Schätzung */
+  sources?: ParcelSources;
 }
 
 export interface Farm {
@@ -69,6 +86,8 @@ export interface PlanDraft {
   useFunding: boolean;
   horizonYears: number;
   discountRate: number;
+  /** Heutige Nutzung für Flurstücke ohne Angabe (Planannahme) */
+  assumedLandUse?: LandUse;
 }
 
 export interface SavedPlan {

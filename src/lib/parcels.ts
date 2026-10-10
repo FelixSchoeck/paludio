@@ -3,8 +3,9 @@ import {
   bundeslandAt, fbm, fromKm, hash32, inGermany, KM_PER_DEG_LAT, KM_PER_DEG_LON, nearestCity,
   ringAreaHa, ringCentroid, rngFrom, toKm,
 } from './geo';
-import { regionById, soilAt, type SoilInfo } from './moor';
+import { regionById, soilAt, soilForRing, type SoilInfo } from './moor';
 import { BW_ALKIS_PARCELS } from './alkis_bw';
+import { onKulisseLoaded } from './kulisse';
 
 export { BW_ALKIS_PARCELS };
 
@@ -17,6 +18,8 @@ export { BW_ALKIS_PARCELS };
  */
 
 const cache = new Map<string, Parcel[]>();
+// Neu geladene Kulisse-Kacheln ändern die Bodenwerte – Modellflurstücke neu erzeugen
+onKulisseLoaded(() => cache.clear());
 
 const LAND_USE_LABEL: Record<LandUse, string> = {
   acker: 'Acker',
@@ -26,33 +29,16 @@ const LAND_USE_LABEL: Record<LandUse, string> = {
 };
 export const landUseLabel = (l: LandUse) => LAND_USE_LABEL[l];
 
-function pickLandUse(r: number, soil: SoilInfo): LandUse {
-  if (soil.type === 'hochmoor') {
-    if (r < 0.15) return 'acker';
-    if (r < 0.55) return 'gruenland_intensiv';
-    if (r < 0.8) return 'gruenland_extensiv';
-    return 'brache';
-  }
-  if (r < 0.25) return 'acker';
-  if (r < 0.7) return 'gruenland_intensiv';
-  if (r < 0.9) return 'gruenland_extensiv';
-  return 'brache';
-}
 
 export function buildParcel(
   id: string, label: string, ring: LatLng[], gemarkung: string, seed: number, custom = false,
 ): Parcel {
   const centroid = ringCentroid(ring);
-  const soil = soilAt(centroid[0], centroid[1]);
+  const soil = soilForRing(ring, centroid);
   const rnd = rngFrom(seed);
-  const landUse = pickLandUse(rnd(), soil);
-  let waterLevelCm = 0;
-  if (soil.type !== 'mineral') {
-    const base = { acker: 72, gruenland_intensiv: 52, gruenland_extensiv: 36, brache: 28 }[landUse];
-    waterLevelCm = Math.round(base + (rnd() - 0.5) * 22);
-  } else {
-    waterLevelCm = Math.round(90 + rnd() * 80);
-  }
+  // Nutzung und Wasserstand sind ohne Angabe des Betriebs unbekannt; die Rechnung nutzt dann die Planannahme
+  const landUse: LandUse = 'gruenland_intensiv';
+  const waterLevelCm = soil.type === 'mineral' ? 0 : 50;
   const drainage = rnd() < 0.55 ? 'drainage' : rnd() < 0.85 ? 'graeben' : 'keine';
   return {
     id,
@@ -69,7 +55,42 @@ export function buildParcel(
     drainage: soil.type === 'mineral' ? 'drainage' : drainage,
     regionId: soil.regionId,
     custom,
+    soilCategory: soil.category,
+    peatClass: soil.peatClass,
+    sources: {
+      moor: soil.source,
+      peat: soil.source === 'kulisse' && soil.depthKnown ? 'kulisse' : 'schaetzung',
+      water: 'schaetzung',
+      landUse: 'schaetzung',
+    },
   };
+}
+
+const USER_SOURCES = new Set(['angabe', 'messung', 'gutachten', 'sammelantrag']);
+export const isUserSource = (s?: string) => !!s && USER_SOURCES.has(s);
+/** Wert beruht auf keiner Karte und keiner eigenen Angabe */
+export const isEstimate = (s?: string) => !s || s === 'schaetzung' || s === 'modell';
+
+/**
+ * Leitet Moortyp und Torf eines vorhandenen Flurstücks neu aus der Kulisse ab.
+ * Eigene Angaben (Messung, Gutachten …) bleiben unverändert.
+ */
+export function refreshSoil(p: Parcel): Parcel {
+  const src = p.sources ?? { moor: 'schaetzung', peat: 'schaetzung', water: 'schaetzung', landUse: 'schaetzung' };
+  const soil = soilForRing(p.ring, p.centroid);
+  const next: Parcel = { ...p, sources: { ...src } };
+  if (!isUserSource(src.moor)) {
+    next.moorType = soil.type;
+    next.soilCategory = soil.category;
+    next.regionId = soil.regionId ?? p.regionId;
+    next.sources!.moor = soil.source;
+  }
+  if (!isUserSource(src.peat)) {
+    next.peatDepthCm = soil.depthCm;
+    next.peatClass = soil.peatClass;
+    next.sources!.peat = soil.source === 'kulisse' && soil.depthKnown ? 'kulisse' : 'schaetzung';
+  }
+  return next;
 }
 
 function rectRing(x: number, y: number, w: number, h: number): LatLng[] {

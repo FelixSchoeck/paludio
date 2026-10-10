@@ -167,16 +167,11 @@ a:hover {
   text-decoration: none;
 }
 .brand:hover { text-decoration: none; color: var(--text-main); }
-.brand-name {
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  line-height: 1.2;
-}
-.brand-sub {
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.2;
+.brand .wordmark {
+  display: block;
+  width: 100%;
+  max-width: 220px;
+  height: auto;
 }
 
 .farm-switch {
@@ -1409,6 +1404,41 @@ input[type="range"] {
   gap: 8px;
   background: #fff;
   margin-bottom: 8px;
+}
+
+/* Bodenwerte mit Herkunft */
+.facts {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 6px 10px;
+  align-items: center;
+  font-size: 13px;
+}
+.facts > span:not(.badge) { color: var(--text-muted); }
+.facts > b { font-weight: 500; }
+.facts-btn { grid-column: 1 / -1; justify-self: start; margin-top: 2px; }
+.src-chip { font-size: 11px; padding: 0 8px; font-weight: 500; }
+.facts-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  font-size: 13px;
+}
+.facts-edit label {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+.facts-edit label > span { color: var(--text-muted); font-weight: 500; }
+.facts-edit input, .facts-edit select:not(.mini-select) { min-height: 34px; padding: 4px 8px; font-size: 13px; }
+.estimate-banner {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-bottom: 20px;
 }
 
 .mini-select {

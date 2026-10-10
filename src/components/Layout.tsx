@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import FarmerOnboarding from './FarmerOnboarding';
-import { Logo } from './Logo';
+import { Wordmark } from './Logo';
 import {
   Home,
   Map,
@@ -81,11 +81,7 @@ export default function Layout() {
     <div className="shell">
       <aside className="sidebar">
         <Link className="brand" to="/">
-          <Logo />
-          <span>
-            <div className="brand-name">Paludio</div>
-            <div className="brand-sub">Moor &amp; Paludikultur</div>
-          </span>
+          <Wordmark />
         </Link>
 
         <button

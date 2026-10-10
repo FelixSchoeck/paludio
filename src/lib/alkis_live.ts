@@ -3,6 +3,7 @@ import { buildParcel } from './parcels';
 import { BW_ALKIS_PARCELS, getBwAlkisParcelsInBounds } from './alkis_bw';
 import { hash32, ringAreaHa } from './geo';
 import type { RawParcel } from './alkis_worker';
+import { ensureKulisse } from './kulisse';
 
 /**
  * Amtliche Flurstücke Baden-Württemberg, live vom LGL.
@@ -214,7 +215,7 @@ async function loadTile(key: string) {
   }
   // Nur Flurstücke, deren erster Punkt in der Kachel liegt – so gibt es keine Dubletten
   const own = raw.filter((p) => p.ring[0][0] >= b.s && p.ring[0][0] < b.n && p.ring[0][1] >= b.w && p.ring[0][1] < b.e);
-  await ensureGemarkungen(own.map((p) => p.ref.slice(0, 6)));
+  await Promise.all([ensureGemarkungen(own.map((p) => p.ref.slice(0, 6))), ensureKulisse(b.s, b.w, b.n, b.e)]);
   tiles.set(key, own.map(toParcel));
   if (tiles.size > MAX_TILES_IN_MEMORY) tiles.delete(tiles.keys().next().value!);
 }

@@ -2,9 +2,12 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { CROPS, cropById } from '../lib/crops';
-import { analyze, emissionCurvePoints, emissionPerHa, recommendCrops } from '../lib/calc';
+import { analyze, emissionCurvePoints, emissionPerHa, recommendCrops, currentWl as wlNow, DEFAULT_LAND_USE, TYPICAL_WL } from '../lib/calc';
+import { landUseLabel } from '../lib/parcels';
 import { Badge, Empty, Field, PageHeader, eur, nf } from '../components/ui';
 import { LineChart } from '../components/Charts';
+import { estimateSummary, sourceLabel, sourcesOf } from '../components/ParcelFacts';
+import { isEstimate } from '../lib/parcels';
 import { CropIcon, MapPin, Globe2, AlertTriangle, Info, Save, Play, Check, ArrowRight, ChevronLeft } from '../components/Icons';
 
 const moorLabel = { niedermoor: 'Niedermoor', hochmoor: 'Hochmoor', mineral: 'Mineralboden' } as const;
@@ -24,6 +27,7 @@ export default function Planner() {
   const crop = cropById(draft.cropId) ?? CROPS[0];
   const res = useMemo(() => analyze(parcels, draft), [parcels, draft]);
   const options = useMemo(() => (parcels.length ? recommendCrops(parcels, draft) : []), [parcels, draft]);
+  const est = estimateSummary(parcels);
   const best = options.find((o) => o.recommended);
   const selected = options.find((o) => o.crop.id === draft.cropId);
   const curve = useMemo(() => emissionCurvePoints(), []);
@@ -47,7 +51,8 @@ export default function Planner() {
   const targetWl = res.targetWl;
   const netInvest = res.capex.total - (draft.useFunding ? res.funding.oneTime : 0);
   const labels = res.rows.map((r) => `J${r.year}`);
-  const currentWl = parcels.length ? parcels.reduce((a, p) => a + p.waterLevelCm * p.areaHa, 0) / Math.max(0.01, parcels.reduce((a, p) => a + p.areaHa, 0)) : 0;
+  const currentWl = parcels.length ? parcels.reduce((a, p) => a + wlNow(p, draft.assumedLandUse) * p.areaHa, 0) / Math.max(0.01, parcels.reduce((a, p) => a + p.areaHa, 0)) : 0;
+  const assumedUse = draft.assumedLandUse ?? DEFAULT_LAND_USE;
 
   const doSave = () => {
     if (!parcels.length) return say('Bitte zuerst Flächen auswählen');
@@ -87,6 +92,18 @@ export default function Planner() {
     <div className="page">
       <PageHeader title="Planer" sub="Nutzung, Wirtschaftlichkeit und Klimawirkung für Ihre Flächen berechnen. Alle Werte sind Richtwerte." />
 
+      {est.any && (
+        <div className="note warn estimate-banner">
+          <AlertTriangle size={16} style={{ flex: 'none', marginTop: 2 }} />
+          <div>
+            <b>Es fehlen Angaben zu Ihren Flächen.</b>{' '}
+            {[est.landUse && `Nutzung bei ${est.landUse}`, est.water && `Wasserstand bei ${est.water}`, est.soil && `Boden oder Torf bei ${est.soil}`].filter(Boolean).join(', ')} von {est.total} Moor-Flurstücken.
+            {' '}Gerechnet wird dort mit der Annahme „{landUseLabel(assumedUse)}, {TYPICAL_WL[assumedUse]} cm unter Flur“ (änderbar unter Annahmen).{' '}
+            <Link to="/karte">Echte Werte unter „Meine Flächen“ eintragen →</Link>
+          </div>
+        </div>
+      )}
+
       <div className="stepper" role="tablist" aria-label="Planungsschritte" style={{ marginTop: 0 }}>
         {stepItems.map((s) => (
           <button
@@ -123,8 +140,8 @@ export default function Planner() {
                         <td><input type="checkbox" checked={draft.parcelIds.includes(p.id)} onChange={() => toggleParcel(p.id)} onClick={(e) => e.stopPropagation()} aria-label={`${p.label} auswählen`} /></td>
                         <td><b>{p.label}</b><div className="muted" style={{ fontSize: 12 }}>{p.gemarkung}</div></td>
                         <td className="num">{nf(p.areaHa, 2)} ha</td>
-                        <td><Badge tone={p.moorType === 'mineral' ? 'grau' : 'braun'}>{moorLabel[p.moorType]}{p.moorType !== 'mineral' && ` · ${p.peatDepthCm} cm`}</Badge></td>
-                        <td className="num">{p.moorType === 'mineral' ? '–' : `${p.waterLevelCm} cm`}</td>
+                        <td><Badge tone={p.moorType === 'mineral' ? 'grau' : 'braun'}>{p.soilCategory ?? moorLabel[p.moorType]}{p.moorType !== 'mineral' && ` · ${p.peatClass ? p.peatClass.replace(/^TM\w+ \((.*)\)$/, '$1') : `${p.peatDepthCm} cm`}`}</Badge></td>
+                        <td className="num" title={isEstimate(sourcesOf(p).water) ? 'Keine Angabe – gerechnet mit der Annahme' : `Quelle: ${sourceLabel(sourcesOf(p).water)}`}>{p.moorType === 'mineral' ? '–' : isEstimate(sourcesOf(p).water) ? <span className="muted">keine Angabe</span> : `${p.waterLevelCm} cm`}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -232,6 +249,11 @@ export default function Planner() {
                 </Field>
                 <Field label={`CO₂-Preis Moor-Zertifikate: ${draft.co2Price} €/t`}>
                   <input type="range" min={20} max={140} step={5} value={draft.co2Price} onChange={(e) => setDraft({ co2Price: Number(e.target.value) })} />
+                </Field>
+                <Field label="Heutige Nutzung, wo nicht angegeben" hint={`Bestimmt entgangenen Deckungsbeitrag und heutigen Wasserstand (typisch ${TYPICAL_WL[assumedUse]} cm unter Flur).`}>
+                  <select value={assumedUse} onChange={(e) => setDraft({ assumedLandUse: e.target.value as typeof assumedUse })}>
+                    {(['acker', 'gruenland_intensiv', 'gruenland_extensiv', 'brache'] as const).map((u) => <option key={u} value={u}>{landUseLabel(u)}</option>)}
+                  </select>
                 </Field>
                 <Field label="Betrachtungszeitraum">
                   <select value={draft.horizonYears} onChange={(e) => setDraft({ horizonYears: Number(e.target.value) })}>

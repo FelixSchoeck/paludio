@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useStore } from '../lib/store';
 import { BUNDESLAENDER } from '../lib/geo';
-import { BW_ALKIS_PARCELS } from '../lib/alkis_bw';
+import { BW_ALKIS_PARCELS, DEMO_BW_REFS } from '../lib/alkis_bw';
 import { findMoorParcels } from '../lib/parcels';
 import type { Farm, Parcel, BL, Tenure } from '../lib/types';
 import {
@@ -25,7 +25,7 @@ import {
   X,
 } from './Icons';
 import { Badge, nf } from './ui';
-import { Logo } from './Logo';
+import { Wordmark } from './Logo';
 
 interface Props {
   onClose?: () => void;
@@ -63,9 +63,9 @@ export default function FarmerOnboarding({ onClose }: Props) {
 
   const selectedParcels = useMemo<Parcel[]>(() => {
     if (parcelOption === 'alkis_bw') {
-      return BW_ALKIS_PARCELS.slice(0, 3).map((p, idx) => ({
+      return DEMO_BW_REFS.map((ref) => BW_ALKIS_PARCELS.find((p) => p.alkis?.flurstueckskennzeichen === ref)!).map((p, idx) => ({
         ...p,
-        tenure: (idx === 2 ? 'pacht' : 'eigentum') as Tenure,
+        tenure: (idx === 3 ? 'pacht' : 'eigentum') as Tenure,
       }));
     }
     if (parcelOption === 'teufelsmoor') {
@@ -113,11 +113,7 @@ export default function FarmerOnboarding({ onClose }: Props) {
       {/* Seitenspalte mit Schritten */}
       <aside className="onboarding-side">
         <div className="brand">
-          <Logo />
-          <span>
-            <div className="brand-name">Paludio</div>
-            <div className="brand-sub">Moor &amp; Paludikultur</div>
-          </span>
+          <Wordmark />
         </div>
 
         <div className="onboarding-intro">
@@ -536,7 +532,7 @@ export default function FarmerOnboarding({ onClose }: Props) {
                     <Database size={20} />
                     <div>
                       <b>Federseemoor (Amtlich BW)</b>
-                      <div className="muted small">3 amtliche Flurstücke aus Bad Buchau (166 ha)</div>
+                      <div className="muted small">4 amtliche Flurstücke im Federseeried (138 ha Niedermoor)</div>
                     </div>
                   </div>
 
@@ -585,7 +581,6 @@ export default function FarmerOnboarding({ onClose }: Props) {
                           <th>Gemarkung</th>
                           <th>Amtliche Fläche</th>
                           <th>Moorboden</th>
-                          <th>Ist-Wasserstand</th>
                           <th>Quelle</th>
                         </tr>
                       </thead>
@@ -601,7 +596,6 @@ export default function FarmerOnboarding({ onClose }: Props) {
                                 {p.moorType === 'niedermoor' ? 'Niedermoor' : 'Hochmoor'} ({p.peatDepthCm} cm)
                               </Badge>
                             </td>
-                            <td className="num">{p.waterLevelCm} cm u. Flur</td>
                             <td>
                               {p.isAlkis ? (
                                 <span className="badge gruen small enterprise-badge">Amtlich erfasst (BW)</span>

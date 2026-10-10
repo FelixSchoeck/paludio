@@ -4,8 +4,8 @@ import type {
 } from './types';
 import { analyze, defaultDraft } from './calc';
 import { SEED_LISTINGS, SEED_MACHINES } from './market';
-import { findMoorParcels } from './parcels';
-import { BW_ALKIS_PARCELS } from './alkis_bw';
+import { findMoorParcels, refreshSoil } from './parcels';
+import { BW_ALKIS_PARCELS, DEMO_BW_REFS } from './alkis_bw';
 import { TASKS } from './monitoring';
 
 export interface AppState {
@@ -52,7 +52,8 @@ function load(): AppState {
       const official = new Map(BW_ALKIS_PARCELS.map((p) => [p.id, p]));
       saved.myParcels = saved.myParcels.map((p) => {
         const o = official.get(p.id);
-        return o ? { ...p, gemarkung: o.gemarkung, alkis: o.alkis } : p;
+        // Bodenwerte aus der Thünen-Kulisse neu ableiten (eigene Angaben bleiben erhalten)
+        return refreshSoil(o ? { ...p, gemarkung: o.gemarkung, alkis: o.alkis } : p);
       });
       return saved;
     }
@@ -217,9 +218,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
       resetOnboarding: () => patch(() => ({ onboarded: false })),
       loadBwDemo: () => {
-        const bwParcels = BW_ALKIS_PARCELS.slice(0, 3).map((p, i) => ({
+        const bwParcels = DEMO_BW_REFS.map((ref) => BW_ALKIS_PARCELS.find((p) => p.alkis?.flurstueckskennzeichen === ref)!).map((p, i) => ({
           ...p,
-          tenure: (i === 2 ? 'pacht' : 'eigentum') as Tenure,
+          tenure: (i === 3 ? 'pacht' : 'eigentum') as Tenure,
         }));
         const planId = uid('plan');
         const projectId = uid('proj');

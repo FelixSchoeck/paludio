@@ -6,9 +6,11 @@ import { useStore } from '../lib/store';
 import type { LatLng, MoorType, Parcel } from '../lib/types';
 import { parcelsInBounds, makeCustomParcel, landUseLabel } from '../lib/parcels';
 import { bwParcelsInView, onBwTilesLoaded, BW_ATTRIBUTION, BW_MIN_ZOOM } from '../lib/alkis_live';
+import { KULISSE_ATTRIBUTION, KULISSE_LAYER, KULISSE_WMS, ensureKulisse, kulisseCovers, kulisseSld, onKulisseLoaded } from '../lib/kulisse';
+import ParcelFacts from '../components/ParcelFacts';
 import { soilAt, MOOR_REGIONS } from '../lib/moor';
 import { BUNDESLAENDER, CITIES } from '../lib/geo';
-import { emissionPerHa } from '../lib/calc';
+import { currentUse, currentWl, emissionPerHa } from '../lib/calc';
 import { Badge, Tabs, nf } from '../components/ui';
 import { Pencil, MapPin, X, DraftingCompass, Crosshair, Trash2, Database } from '../components/Icons';
 
@@ -79,6 +81,7 @@ export default function MapPage() {
     mapRef.current = map;
     map.zoomControl.setPosition('topright');
     map.attributionControl.addAttribution(BW_ATTRIBUTION);
+    map.attributionControl.addAttribution(KULISSE_ATTRIBUTION);
     // Mit eigenen Flächen direkt dorthin springen
     if (state.myParcels.length) {
       const bounds = L.latLngBounds(state.myParcels.flatMap((p) => p.ring));
@@ -87,46 +90,11 @@ export default function MapPage() {
       if (state.myParcels.some((p) => p.bundesland === 'BW') && map.getZoom() < BW_MIN_ZOOM) map.setZoom(BW_MIN_ZOOM, { animate: false });
     }
 
-    const MoorGrid = (L.GridLayer as unknown as { extend: (o: object) => new (o?: object) => L.GridLayer }).extend({
-      createTile(coords: L.Coords) {
-        const size = 256;
-        const tile = document.createElement('canvas');
-        tile.width = size;
-        tile.height = size;
-        const nwLL = map.unproject(L.point(coords.x * size, coords.y * size), coords.z);
-        const seLL = map.unproject(L.point((coords.x + 1) * size, (coords.y + 1) * size), coords.z);
-        if (seLL.lat > 55.3 || nwLL.lat < 47.0 || seLL.lng < 5.7 || nwLL.lng > 15.3) return tile;
-        const N = coords.z <= 9 ? 96 : 64;
-        const small = document.createElement('canvas');
-        small.width = N;
-        small.height = N;
-        const sctx = small.getContext('2d')!;
-        const img = sctx.createImageData(N, N);
-        const step = size / N;
-        let any = false;
-        for (let j = 0; j < N; j++) {
-          for (let i = 0; i < N; i++) {
-            const ll = map.unproject(L.point(coords.x * size + (i + 0.5) * step, coords.y * size + (j + 0.5) * step), coords.z);
-            const s = soilAt(ll.lat, ll.lng);
-            if (s.type === 'mineral') continue;
-            any = true;
-            const o = (j * N + i) * 4;
-            const k = Math.min(1, s.depthCm / 300);
-            if (s.type === 'hochmoor') { img.data[o] = 128; img.data[o + 1] = 52; img.data[o + 2] = 70; }
-            else { img.data[o] = 160; img.data[o + 1] = 112; img.data[o + 2] = 44; }
-            img.data[o + 3] = Math.round(120 + 110 * k);
-          }
-        }
-        if (any) {
-          sctx.putImageData(img, 0, 0);
-          const ctx = tile.getContext('2d')!;
-          ctx.imageSmoothingEnabled = true;
-          ctx.drawImage(small, 0, 0, size, size);
-        }
-        return tile;
-      },
-    });
-    const moor = new MoorGrid({ opacity: 0.75, zIndex: 5 });
+    // Moorbodenkarte: Thünen-Kulisse direkt vom Kartendienst, in den Paludio-Farben
+    const moor = L.tileLayer.wms(KULISSE_WMS, {
+      layers: KULISSE_LAYER, format: 'image/png', transparent: true, version: '1.1.1',
+      zIndex: 5, maxZoom: 19, SLD_BODY: kulisseSld(),
+    } as L.WMSOptions);
     moor.addTo(map);
     moorRef.current = moor;
 
@@ -163,7 +131,10 @@ export default function MapPage() {
       setBwStatus({ loading: bw.loading, offline: bw.offline, needZoom: bw.needZoom });
       // Nur zeichnen, was (mit kleinem Rand) im Bild liegt
       const inView = (p: Parcel) => b.contains(p.centroid) || b.intersects(L.latLngBounds(p.ring));
-      const list = [...parcelsInBounds(b.getSouth(), b.getWest(), b.getNorth(), b.getEast()), ...bw.parcels.filter(inView)];
+      // Flurstücke erst bauen, wenn die Moorbodenkarte für den Ausschnitt geladen ist
+      const covered = kulisseCovers(b.getSouth(), b.getWest(), b.getNorth(), b.getEast());
+      if (!covered) void ensureKulisse(b.getSouth(), b.getWest(), b.getNorth(), b.getEast());
+      const list = covered ? [...parcelsInBounds(b.getSouth(), b.getWest(), b.getNorth(), b.getEast()), ...bw.parcels.filter(inView)] : [];
       const skip = new Set<string>([...selectedRef.current.map((p) => p.id), ...ownRefData.current.map((p) => p.id)]);
       const want = new Set<string>();
       for (const p of list) {
@@ -190,11 +161,13 @@ export default function MapPage() {
     const scheduleRender = () => { window.clearTimeout(timer); timer = window.setTimeout(renderView, 150); };
     map.on('moveend zoomend', scheduleRender);
     const offBw = onBwTilesLoaded(scheduleRender);
+    const offKulisse = onKulisseLoaded(scheduleRender);
     renderView();
 
     return () => {
       window.clearTimeout(timer);
       offBw();
+      offKulisse();
       map.remove();
       mapRef.current = null;
     };
@@ -345,8 +318,8 @@ export default function MapPage() {
     const ha = selected.reduce((a, p) => a + p.areaHa, 0);
     const moor = selected.filter((p) => p.moorType !== 'mineral');
     const moorHa = moor.reduce((a, p) => a + p.areaHa, 0);
-    const em = moor.reduce((a, p) => a + emissionPerHa(p.waterLevelCm, p.peatDepthCm, p.landUse) * p.areaHa, 0);
-    const emAfter = moor.reduce((a, p) => a + emissionPerHa(5, p.peatDepthCm, p.landUse) * p.areaHa, 0);
+    const em = moor.reduce((a, p) => a + emissionPerHa(currentWl(p), p.peatDepthCm, currentUse(p)) * p.areaHa, 0);
+    const emAfter = moor.reduce((a, p) => a + emissionPerHa(5, p.peatDepthCm, currentUse(p)) * p.areaHa, 0);
     return { ha, moorHa, em, saving: em - emAfter };
   }, [selected]);
 
@@ -481,7 +454,7 @@ export default function MapPage() {
                 {totals.moorHa === 0 && <div className="note warn">Keine Moorfläche in der Auswahl – Wiedervernässung und Paludikultur sind hier nicht sinnvoll.</div>}
                 {selected.some((p) => p.isAlkis) && (
                   <p className="muted small" style={{ margin: 0 }}>
-                    Amtlich sind Grenzen, Kennzeichen, Fläche und Gemarkung. Boden, Nutzung und Wasserstand sind Schätzwerte aus der Moorbodenkarte.
+                    Grenzen, Kennzeichen, Fläche und Gemarkung sind amtlich (LGL). Boden und Torfklasse stammen aus der Thünen-Kulisse, Wasserstand und Nutzung sind Schätzungen – nach dem Speichern unter „Meine Flächen“ eintragen.
                   </p>
                 )}
                 <div className="list">
@@ -505,13 +478,8 @@ export default function MapPage() {
                       <div className="row gap wrap">
                         <Badge tone={moorTone(p.moorType)}>{moorLabel[p.moorType]}</Badge>
                         <Badge>{nf(p.areaHa, 2)} ha</Badge>
-                        {p.moorType !== 'mineral' && <Badge>{p.peatDepthCm} cm Torf</Badge>}
                       </div>
-                      <div className="kv">
-                        <span>Nutzung</span><b>{landUseLabel(p.landUse)}</b>
-                        {p.moorType !== 'mineral' && (<><span>Wasserstand heute</span><b>{p.waterLevelCm} cm unter Flur</b></>)}
-                        <span>Entwässerung</span><b>{p.drainage === 'drainage' ? 'Dränage' : p.drainage === 'graeben' ? 'Gräben' : 'keine'}</b>
-                      </div>
+                      <ParcelFacts parcel={p} />
                     </div>
                   ))}
                 </div>
@@ -552,14 +520,8 @@ export default function MapPage() {
                         <div className="code-cell" style={{ fontSize: '0.74rem' }}>{p.alkis.flurstueckskennzeichen}</div>
                       )}
                       <div className="muted">{p.gemarkung} · {nf(p.areaHa, 2)} ha</div>
-                      {p.moorType !== 'mineral' && (
-                        <div className="kv">
-                          <span>Torf</span><b>{p.peatDepthCm} cm</b>
-                          <span>Wasserstand heute</span><b>{p.waterLevelCm} cm unter Flur</b>
-                        </div>
-                      )}
+                      <ParcelFacts key={JSON.stringify(p.sources) + p.waterLevelCm + p.landUse} parcel={p} onChange={(patch) => updateParcel(p.id, patch)} />
                       <div className="row gap wrap">
-                        <Badge tone={moorTone(p.moorType)}>{moorLabel[p.moorType]}</Badge>
                         <select className="mini-select" value={p.tenure ?? 'eigentum'} onChange={(e) => updateParcel(p.id, { tenure: e.target.value as 'eigentum' | 'pacht' })}>
                           <option value="eigentum">Eigentum</option>
                           <option value="pacht">Pacht</option>

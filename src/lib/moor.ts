@@ -1,5 +1,6 @@
 import type { BL, LatLng, MoorType } from './types';
 import { fbm, KM_PER_DEG_LAT, KM_PER_DEG_LON } from './geo';
+import { kulisseAt, kulisseCovers } from './kulisse';
 
 /**
  * Prototyp-Bodenmodell für Moorböden in Deutschland.
@@ -60,9 +61,39 @@ export interface SoilInfo {
   type: MoorType;
   depthCm: number;
   regionId?: string;
+  /** kulisse = Thünen-Kulisse; modell = Rückfallmodell ohne Kartengrundlage */
+  source: 'kulisse' | 'modell';
+  /** true, wenn die Torfmächtigkeit aus einer Klasse der Kulisse stammt */
+  depthKnown: boolean;
+  category?: string;
+  categoryNote?: string;
+  peatClass?: string;
 }
 
-const MINERAL: SoilInfo = { type: 'mineral', depthCm: 0 };
+const MINERAL: SoilInfo = { type: 'mineral', depthCm: 0, source: 'modell', depthKnown: false };
+
+/**
+ * Boden am Punkt. Grundlage ist die Thünen-Kulisse organischer Böden; nur wenn sie nicht geladen
+ * werden konnte, greift das alte Regionenmodell (dann als „modell“ gekennzeichnet).
+ */
+export function soilAt(lat: number, lon: number): SoilInfo {
+  const hit = kulisseAt(lat, lon);
+  // Kachel nicht geladen bzw. Kulisse nicht verfügbar: Rückfallmodell (als „modell“ gekennzeichnet)
+  if (hit === undefined) return modelSoilAt(lat, lon);
+  if (hit === null) return { type: 'mineral', depthCm: 0, source: 'kulisse', depthKnown: true };
+  const known = hit.peat.depthCm != null;
+  return {
+    type: hit.category.genese,
+    // Unbekannte Mächtigkeit (TMX): vorsichtige Annahme, als Schätzung gekennzeichnet
+    depthCm: hit.peat.depthCm ?? 70,
+    regionId: nearestRegion([lat, lon]).id,
+    source: 'kulisse',
+    depthKnown: known,
+    category: hit.category.label,
+    categoryNote: hit.category.note,
+    peatClass: `${hit.peat.code} (${hit.peat.label})`,
+  };
+}
 
 // Vorberechnete Hüllrechtecke (km) für schnellen Ausschluss
 const REGION_BOX = MOOR_REGIONS.map((r) => {
@@ -72,7 +103,8 @@ const REGION_BOX = MOOR_REGIONS.map((r) => {
   return { minX: cx - R, maxX: cx + R, minY: cy - R, maxY: cy + R, cx, cy, cos: Math.cos((-r.rot * Math.PI) / 180), sin: Math.sin((-r.rot * Math.PI) / 180) };
 });
 
-export function soilAt(lat: number, lon: number): SoilInfo {
+/** Rückfallmodell: bekannte Moorgebiete als Ellipsen (keine Kartengrundlage) */
+function modelSoilAt(lat: number, lon: number): SoilInfo {
   const x = lon * KM_PER_DEG_LON;
   const y = lat * KM_PER_DEG_LAT;
   let best: SoilInfo = MINERAL;
@@ -90,9 +122,56 @@ export function soilAt(lat: number, lon: number): SoilInfo {
     if (v >= 1) continue;
     const depth = r.peatMaxCm * Math.pow(1 - v, 0.55) * (0.75 + 0.25 * (fbm(x / 0.9, y / 0.9, 31 + i) + 1) / 2);
     if (depth < 30) continue;
-    if (!best.regionId || depth > best.depthCm) best = { type: r.type, depthCm: Math.round(depth / 5) * 5, regionId: r.id };
+    if (!best.regionId || depth > best.depthCm) best = { type: r.type, depthCm: Math.round(depth / 5) * 5, regionId: r.id, source: 'modell', depthKnown: false };
   }
   return best;
+}
+
+function pointInRing(lat: number, lon: number, ring: LatLng[]): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [yi, xi] = ring[i];
+    const [yj, xj] = ring[j];
+    if ((yi > lat) !== (yj > lat) && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * Boden eines Flurstücks: tastet die Fläche in einem Raster ab (bis ca. 100 Punkte) und nimmt die
+ * vorherrschende Kategorie und Torfklasse der organischen Teilfläche.
+ * `moorShare` = Anteil der Fläche mit organischem Boden laut Kulisse.
+ */
+export function soilForRing(ring: LatLng[], centroid: LatLng): SoilInfo & { moorShare: number } {
+  let s = 90, n = -90, w = 180, e = -180;
+  for (const [la, lo] of ring) { s = Math.min(s, la); n = Math.max(n, la); w = Math.min(w, lo); e = Math.max(e, lo); }
+  // Ohne geladene Kulisse für diesen Ausschnitt: Rückfallmodell am Mittelpunkt
+  if (ring.length < 3 || !kulisseCovers(s, w, n, e)) return { ...soilAt(centroid[0], centroid[1]), moorShare: 0 };
+  const steps = 10;
+  const samples: SoilInfo[] = [];
+  let inside = 0;
+  for (let i = 0; i < steps; i++) {
+    for (let j = 0; j < steps; j++) {
+      const la = s + ((i + 0.5) / steps) * (n - s);
+      const lo = w + ((j + 0.5) / steps) * (e - w);
+      if (!pointInRing(la, lo, ring)) continue;
+      inside++;
+      const soil = soilAt(la, lo);
+      if (soil.type !== 'mineral') samples.push(soil);
+    }
+  }
+  if (!inside) return { ...soilAt(centroid[0], centroid[1]), moorShare: 0 };
+  const moorShare = samples.length / inside;
+  // Unter 50 % organischer Fläche gilt das Flurstück als Mineralboden
+  if (moorShare < 0.5) return { type: 'mineral', depthCm: 0, source: 'kulisse', depthKnown: true, moorShare };
+  const count = new Map<string, { n: number; soil: SoilInfo }>();
+  for (const soil of samples) {
+    const key = `${soil.category}|${soil.peatClass}`;
+    const c = count.get(key);
+    if (c) c.n++; else count.set(key, { n: 1, soil });
+  }
+  const dominant = [...count.values()].sort((a, b) => b.n - a.n)[0].soil;
+  return { ...dominant, moorShare };
 }
 
 export function nearestRegion(p: LatLng): MoorRegion {
