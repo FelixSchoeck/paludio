@@ -5,6 +5,7 @@ in vec2 p; void main(){ gl_Position = vec4(p, 0., 1.); }`;
 const FS = `#version 300 es
 precision highp float;
 uniform vec2 uRes; uniform float uT; uniform float uLines;
+uniform vec3 uBase, uTintA, uTintB, uLineCol;
 out vec4 o;
 vec3 mod289(vec3 x){ return x - floor(x * (1. / 289.)) * 289.; }
 vec2 mod289(vec2 x){ return x - floor(x * (1. / 289.)) * 289.; }
@@ -24,25 +25,28 @@ float snoise(vec2 v){
 float fbm(vec2 p){ float a = .5, s = 0.; for (int i = 0; i < 4; i++){ s += a * snoise(p); p = p * 2.02 + 11.3; a *= .5; } return s; }
 void main(){
   vec2 uv = gl_FragCoord.xy / uRes.y;
-  vec3 col = vec3(.952, .956, .937);
+  vec3 col = uBase;
   float a = fbm(uv * 1.1 + vec2(uT * .035, -uT * .02));
   float b = fbm(uv * .9 + vec2(7.1, 3.3) - vec2(uT * .02, uT * .03));
-  col = mix(col, vec3(.875, .925, .885), smoothstep(-.1, .7, a) * .55);
-  col = mix(col, vec3(.880, .915, .935), smoothstep(0., .8, b) * .45);
+  col = mix(col, uTintA, smoothstep(-.1, .7, a) * .55);
+  col = mix(col, uTintB, smoothstep(0., .8, b) * .45);
   // Höhenlinien, 1 px breit, sehr zurückhaltend
   float h = fbm(uv * 1.5 + vec2(uT * .012, uT * .008)) * 9.;
   float d = abs(fract(h) - .5) / fwidth(h);
   float line = 1. - clamp(d - .35, 0., 1.);
-  col = mix(col, vec3(.18, .41, .23), line * uLines);
+  col = mix(col, uLineCol, line * uLines);
   // leichte Vignette
   vec2 c = gl_FragCoord.xy / uRes - .5;
   col *= 1. - dot(c, c) * .12;
   o = vec4(col, 1.);
 }`;
 
-export function createBackground(canvas, pixelRatio) {
-  canvas.width = 1920 * pixelRatio;
-  canvas.height = 1080 * pixelRatio;
+// Standardpalette: helle Fläche wie im querformatigen Showreel
+export const LIGHT = { base: [0.952, 0.956, 0.937], tintA: [0.875, 0.925, 0.885], tintB: [0.88, 0.915, 0.935], line: [0.18, 0.41, 0.23] };
+
+export function createBackground(canvas, pixelRatio, width = 1920, height = 1080) {
+  canvas.width = width * pixelRatio;
+  canvas.height = height * pixelRatio;
   const gl = canvas.getContext('webgl2', { antialias: false, preserveDrawingBuffer: true });
   const sh = (type, src) => {
     const s = gl.createShader(type);
@@ -63,8 +67,10 @@ export function createBackground(canvas, pixelRatio) {
   gl.enableVertexAttribArray(loc);
   gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
   const uRes = gl.getUniformLocation(prog, 'uRes'), uT = gl.getUniformLocation(prog, 'uT'), uLines = gl.getUniformLocation(prog, 'uLines');
+  const uPal = ['uBase', 'uTintA', 'uTintB', 'uLineCol'].map((n) => gl.getUniformLocation(prog, n));
   gl.viewport(0, 0, canvas.width, canvas.height);
-  return (t, lines) => {
+  return (t, lines, pal = LIGHT) => {
+    [pal.base, pal.tintA, pal.tintB, pal.line].forEach((c, i) => gl.uniform3f(uPal[i], ...c));
     gl.uniform2f(uRes, canvas.width, canvas.height);
     gl.uniform1f(uT, t);
     gl.uniform1f(uLines, lines);

@@ -148,7 +148,7 @@ export async function renderAudio() {
   return wavBase64(buffer.get());
 }
 
-function wavBase64(ab) {
+export function wavBase64(ab) {
   const ch = ab.numberOfChannels, sr = ab.sampleRate, n = ab.length;
   const data = new DataView(new ArrayBuffer(44 + n * ch * 2));
   const str = (o, s) => [...s].forEach((c, i) => data.setUint8(o + i, c.charCodeAt(0)));

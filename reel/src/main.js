@@ -17,6 +17,7 @@ window.ready = (async () => {
   renderFrame(0);
   return true;
 })();
+window.DURATION = DURATION;
 window.renderFrame = renderFrame;
 window.renderAudio = async () => (await import('./audio.js')).renderAudio();
 

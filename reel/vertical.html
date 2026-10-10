@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<title>Paludio Reel (hochkant)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1080px; height: 1920px; overflow: hidden; background: #13331c; }
+  body { font-family: Geist, system-ui, sans-serif; -webkit-font-smoothing: antialiased; color: #18211c; }
+  #stage { position: relative; width: 1080px; height: 1920px; overflow: hidden; }
+  #bg { position: absolute; inset: 0; width: 1080px; height: 1920px; }
+  #world { position: absolute; inset: 0; transform-origin: 50% 50%; }
+  .scene { position: absolute; inset: 0; will-change: transform; }
+
+  /* Typografie */
+  .kicker { position: absolute; left: 0; right: 0; text-align: center; font-size: 30px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
+  .head { position: absolute; left: 0; right: 0; text-align: center; font-size: 104px; font-weight: 700; letter-spacing: -0.05em; line-height: 1.0; }
+  .head .line { overflow: hidden; padding: 0 0 10px; }
+  .head .line > span { display: inline-block; }
+  .head em { font-style: normal; color: #2e6a3b; }
+  .light .kicker { color: #2e6a3b; }
+  .dark { color: #f3f4ef; }
+  .dark .kicker { color: #9cc7a5; }
+  .big { position: absolute; left: 0; right: 0; text-align: center; font-size: 200px; font-weight: 700; letter-spacing: -0.06em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .label { position: absolute; left: 0; right: 0; text-align: center; font-size: 52px; font-weight: 600; letter-spacing: -0.03em; }
+  .label em { font-style: normal; color: #9cc7a5; }
+  .foot { position: absolute; left: 0; right: 0; bottom: 96px; text-align: center; font-size: 26px; font-weight: 500; color: rgba(243,244,239,.55); }
+  .hook { position: absolute; left: 0; right: 0; text-align: center; font-size: 210px; font-weight: 800; letter-spacing: -0.06em; line-height: 0.98; color: #f3f4ef; }
+  .hook span { display: block; }
+  .hook em { font-style: normal; color: #9cc7a5; }
+  .slam { position: absolute; left: 0; right: 0; top: 820px; text-align: center; font-size: 190px; font-weight: 800; letter-spacing: -0.06em; color: #f3f4ef; }
+
+  /* App-Ausschnitte als Karten */
+  .card { position: absolute; border-radius: 30px; overflow: hidden; background: #fff; transform-origin: 50% 50%;
+    box-shadow: 0 0 0 1px rgba(24,33,28,.06), 0 40px 90px -30px rgba(24,33,28,.45); }
+  .card .inner { position: absolute; left: 0; top: 0; }
+  .card img { position: absolute; }
+  .tap { position: absolute; width: 74px; height: 74px; margin: -37px 0 0 -37px; border-radius: 50%; background: rgba(255,255,255,.55); border: 3px solid #fff;
+    box-shadow: 0 6px 24px rgba(0,0,0,.35), inset 0 0 0 2px rgba(46,106,59,.35); z-index: 5; }
+  .ring { position: absolute; width: 74px; height: 74px; margin: -37px 0 0 -37px; border-radius: 50%; border: 4px solid #2e6a3b; z-index: 4; }
+  .chip { position: absolute; display: flex; align-items: center; gap: 14px; white-space: nowrap; background: #18211c; color: #fff; border-radius: 999px;
+    padding: 18px 30px 18px 20px; font-size: 32px; font-weight: 600; letter-spacing: -0.02em; box-shadow: 0 20px 50px -16px rgba(0,0,0,.5); }
+  .chip i { width: 18px; height: 18px; border-radius: 50%; background: #5fbf74; display: block; }
+  .chip span { color: rgba(255,255,255,.65); font-weight: 500; }
+
+  #flash { position: absolute; inset: 0; background: #f3f4ef; opacity: 0; pointer-events: none; }
+  #mark, #wordtext { position: absolute; overflow: visible; fill-rule: evenodd; clip-rule: evenodd; }
+  #mark path { transform-box: fill-box; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="bg"></canvas>
+  <div id="world">
+    <!-- 0 · Aufhänger -->
+    <div id="s0" class="scene dark">
+      <div class="hook" style="top:560px"><span>Ihr</span><span>Moor</span><span>kann</span><span><em>mehr.</em></span></div>
+    </div>
+
+    <!-- 1 · Flächen -->
+    <div id="s1" class="scene light">
+      <div class="kicker" style="top:250px">Flächen</div>
+      <div class="head" style="top:310px"><div class="line"><span>Jedes Flurstück.</span></div><div class="line"><span><em>Ein Klick.</em></span></div></div>
+      <div id="c-map" class="card"></div>
+      <div id="c-panel" class="card"></div>
+    </div>
+
+    <!-- 2 · Fläche erkannt -->
+    <div id="s2" class="scene dark">
+      <div class="kicker" style="top:700px">Musterbetrieb Federsee</div>
+      <div class="big" style="top:780px"><span id="n-ha">0</span><span style="font-size:110px;letter-spacing:-0.03em"> ha</span></div>
+      <div class="label" style="top:1010px">Moorboden <em>erkannt</em></div>
+      <div class="foot">Beispielwerte eines Musterbetriebs</div>
+    </div>
+
+    <!-- 3 · Planer -->
+    <div id="s3" class="scene light">
+      <div class="kicker" style="top:250px">Planer</div>
+      <div class="head" style="top:310px"><div class="line"><span>Die beste Nutzung.</span></div><div class="line"><span><em>Begründet.</em></span></div></div>
+      <div id="c-list" class="card"></div>
+      <div id="c-result" class="card"></div>
+    </div>
+
+    <!-- 4 · Klimawirkung -->
+    <div id="s4" class="scene dark">
+      <div class="kicker" style="top:700px">Nach der Wiedervernässung</div>
+      <div class="big" style="top:780px"><span id="n-co2">0</span></div>
+      <div class="label" style="top:1010px">t CO₂e pro Jahr <em>weniger</em></div>
+      <div class="foot">Beispielwerte eines Musterbetriebs</div>
+    </div>
+
+    <!-- 5 · Förderung -->
+    <div id="s5" class="scene light">
+      <div class="kicker" style="top:250px">Förderung</div>
+      <div id="h5a" class="head" style="top:310px"><div class="line"><span>Passende</span></div><div class="line"><span><em>Förderung.</em></span></div></div>
+      <div id="h5b" class="head" style="top:310px"><div class="line"><span>Antrag</span></div><div class="line"><span><em>vorbereitet.</em></span></div></div>
+      <div id="c-prog" class="card"></div>
+      <div id="c-dialog" class="card"></div>
+    </div>
+
+    <!-- 6 · Zuschuss -->
+    <div id="s6" class="scene dark">
+      <div class="kicker" style="top:700px">Für Ihren Plan</div>
+      <div class="big" style="top:800px;font-size:150px"><span id="n-eur">0</span></div>
+      <div class="label" style="top:1010px">Zuschuss <em>möglich</em></div>
+      <div class="foot">Beispielwerte eines Musterbetriebs</div>
+    </div>
+
+    <!-- 7 · Montage -->
+    <div id="s7" class="scene dark">
+      <div id="c-m1" class="card"></div>
+      <div id="c-m2" class="card"></div>
+      <div id="c-m3" class="card"></div>
+      <div id="w1" class="slam">Planen.</div>
+      <div id="w2" class="slam">Fördern.</div>
+      <div id="w3" class="slam">Umsetzen.</div>
+    </div>
+  </div>
+
+  <div id="flash"></div>
+  <!-- 8 · Abspann -->
+  <svg id="mark" viewBox="41 41 467 467"></svg>
+  <svg id="wordtext" viewBox="580 37 1134 471"></svg>
+</div>
+<script type="module" src="/src/vertical.js"></script>
+</body>
+</html>

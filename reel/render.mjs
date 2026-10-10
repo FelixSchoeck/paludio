@@ -3,6 +3,8 @@
 //   node render.mjs --4k             → out/paludio-showreel-4k.mp4 (3840×2160, H.264)
 //   node render.mjs --stills 1,3.5   → out/stills/t-1.png …
 //   node render.mjs --audio          → nur out/sound.wav
+//   node render.mjs --vertical       → out/paludio-reel-vertical.mp4 (1080×1920, Hochkant-Marketing-Reel)
+//   (--vertical lässt sich mit --stills und --audio kombinieren)
 import puppeteer from 'puppeteer-core';
 import { createServer } from 'vite';
 import { spawn, spawnSync } from 'node:child_process';
@@ -10,10 +12,14 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const FPS = 60, DURATION = 12;
+const FPS = 60;
 const SUB = Number(process.env.SUB ?? 3);           // Teilbilder je Bild für Bewegungsunschärfe
 const args = process.argv.slice(2);
 const K4 = args.includes('--4k');
+const V = args.includes('--vertical');
+const [VW, VH] = V ? [1080, 1920] : [1920, 1080];
+const NAME = V ? 'paludio-reel-vertical' : K4 ? 'paludio-showreel-4k' : 'paludio-showreel';
+const SOUND = V ? 'sound-vertical' : 'sound';
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 mkdirSync(here('./out/'), { recursive: true });
 
@@ -28,9 +34,10 @@ const browser = await puppeteer.launch({
 const page = await browser.newPage();
 page.on('pageerror', (e) => console.error('Seitenfehler:', e.message));
 page.on('console', (m) => m.type() === 'error' && console.error('Konsole:', m.text()));
-await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: K4 ? 2 : 1 });
-await page.goto(`${url}?ss=2`, { waitUntil: 'networkidle0' });
+await page.setViewport({ width: VW, height: VH, deviceScaleFactor: K4 ? 2 : 1 });
+await page.goto(`${url}${V ? 'vertical.html' : ''}?ss=2`, { waitUntil: 'networkidle0' });
 await page.evaluate(() => window.ready);
+const DURATION = await page.evaluate(() => window.DURATION);
 
 async function done() { await browser.close(); await server.close(); }
 
@@ -39,7 +46,7 @@ if (stillsAt >= 0) {
   mkdirSync(here('./out/stills/'), { recursive: true });
   for (const t of args[stillsAt + 1].split(',').map(Number)) {
     await page.evaluate((t) => window.renderFrame(t), t);
-    await page.screenshot({ path: here(`./out/stills/t-${t}.png`) });
+    await page.screenshot({ path: here(`./out/stills/${V ? 'v' : 't'}-${t}.png`) });
     console.log('Standbild', t);
   }
   await done();
@@ -49,19 +56,19 @@ if (stillsAt >= 0) {
 // Ton
 const t0 = Date.now();
 const wav = await page.evaluate(() => window.renderAudio());
-writeFileSync(here('./out/sound-raw.wav'), Buffer.from(wav, 'base64'));
+writeFileSync(here(`./out/${SOUND}-raw.wav`), Buffer.from(wav, 'base64'));
 // Lautheit auf −16 LUFS / −1,5 dBTP normalisieren (zwei Durchgänge, linear – keine Dynamikverluste)
 const target = 'I=-16:TP=-1.5:LRA=11';
-const meas = spawnSync('ffmpeg', ['-hide_banner', '-i', here('./out/sound-raw.wav'), '-af', `loudnorm=${target}:print_format=json`, '-f', 'null', '-'], { encoding: 'utf8' }).stderr;
+const meas = spawnSync('ffmpeg', ['-hide_banner', '-i', here(`./out/${SOUND}-raw.wav`), '-af', `loudnorm=${target}:print_format=json`, '-f', 'null', '-'], { encoding: 'utf8' }).stderr;
 const m = JSON.parse(meas.match(/\{[^{}]*"input_i"[^{}]*\}/)[0]);
-spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', here('./out/sound-raw.wav'), '-af',
+spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', here(`./out/${SOUND}-raw.wav`), '-af',
   `loudnorm=${target}:linear=true:measured_I=${m.input_i}:measured_TP=${m.input_tp}:measured_LRA=${m.input_lra}:measured_thresh=${m.input_thresh}:offset=${m.target_offset},aresample=48000`,
-  '-c:a', 'pcm_s24le', here('./out/sound.wav')]);
+  '-c:a', 'pcm_s24le', here(`./out/${SOUND}.wav`)]);
 console.log(`Ton fertig (${((Date.now() - t0) / 1000).toFixed(1)} s, ${m.input_i} → −16 LUFS)`);
 if (args.includes('--audio')) { await done(); process.exit(0); }
 
 // Bild
-const out = here(K4 ? './out/paludio-showreel-4k.mp4' : './out/paludio-showreel.mp4');
+const out = here(`./out/${NAME}.mp4`);
 const weights = Array(SUB).fill(1).join(' ');
 const video = K4
   // x264 statt NVENC: NVENC dieser ffmpeg-Version braucht NVIDIA-Treiber ≥ 610
@@ -70,7 +77,7 @@ const video = K4
 const ff = spawn('ffmpeg', [
   '-y', '-loglevel', 'error',
   '-f', 'image2pipe', '-framerate', String(FPS * SUB), '-c:v', 'png', '-i', '-',
-  '-i', here('./out/sound.wav'),
+  '-i', here(`./out/${SOUND}.wav`),
   '-vf', `tmix=frames=${SUB}:weights='${weights}',select='not(mod(n+1\\,${SUB}))',setpts=N/${FPS}/TB`,
   '-r', String(FPS), ...video,
   '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709',
