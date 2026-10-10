@@ -51,6 +51,10 @@ import {
   Upload,
   Square,
   RotateCcw,
+  ChevronsUpDown,
+  Droplet,
+  ChartLine,
+  Plus,
   type LucideProps,
 } from 'lucide-react';
 
@@ -106,6 +110,10 @@ export {
   Upload,
   Square,
   RotateCcw,
+  ChevronsUpDown,
+  Droplet,
+  ChartLine,
+  Plus,
 };
 
 /**

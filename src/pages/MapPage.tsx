@@ -21,8 +21,8 @@ function baseStyle(p: Parcel): L.PathOptions {
   if (p.moorType === 'hochmoor') return { color: '#4a2a30', weight: 1, fillColor: '#8a4f5a', fillOpacity: 0.5 };
   return { color: '#5f6b60', weight: 0.8, fillColor: '#9aa89c', fillOpacity: 0.12 };
 }
-const SELECTED: L.PathOptions = { color: '#0b5a85', weight: 2.5, fillColor: '#2f9bd0', fillOpacity: 0.55 };
-const OWNED: L.PathOptions = { color: '#2a6b24', weight: 2, fillColor: '#58a84c', fillOpacity: 0.45 };
+const SELECTED: L.PathOptions = { color: '#1d5e78', weight: 2.5, fillColor: '#5fa8c4', fillOpacity: 0.55 };
+const OWNED: L.PathOptions = { color: '#2e6a3b', weight: 2, fillColor: '#3e8a4c', fillOpacity: 0.45 };
 
 interface Suggestion { name: string; pos: LatLng; sub?: string; zoom?: number }
 
@@ -75,7 +75,7 @@ export default function MapPage() {
       maxBounds: [[46.2, 4.5], [56.2, 16.5]], maxBoundsViscosity: 0.8,
     });
     mapRef.current = map;
-    map.zoomControl.setPosition('bottomleft');
+    map.zoomControl.setPosition('topright');
 
     const MoorGrid = (L.GridLayer as unknown as { extend: (o: object) => new (o?: object) => L.GridLayer }).extend({
       createTile(coords: L.Coords) {
@@ -389,10 +389,10 @@ export default function MapPage() {
         </div>
 
         <div className="map-legend">
-          <div><i style={{ background: '#a0702c' }} /> Niedermoor</div>
+          <div><i style={{ background: '#b08a45' }} /> Niedermoor</div>
           <div><i style={{ background: '#803446' }} /> Hochmoor</div>
-          <div><i style={{ background: '#2f9bd0' }} /> Auswahl</div>
-          <div><i style={{ background: '#58a84c' }} /> Meine Flächen</div>
+          <div><i style={{ background: '#5fa8c4' }} /> Auswahl</div>
+          <div><i style={{ background: '#3e8a4c' }} /> Meine Flächen</div>
         </div>
 
         {zoom < MIN_PARCEL_ZOOM && !drawing && (

@@ -6,7 +6,7 @@ import { analyze, cropFit, emissionCurvePoints, emissionPerHa, rankCrops } from 
 import { BUNDESLAENDER } from '../lib/geo';
 import { Badge, Empty, Field, Kpi, PageHeader, eur, nf } from '../components/ui';
 import { LineChart } from '../components/Charts';
-import { CropIcon, MapPin, Globe2, AlertTriangle, Info, Save, Euro, Play } from '../components/Icons';
+import { CropIcon, MapPin, Globe2, AlertTriangle, Info, Save, Euro, Play, Plus } from '../components/Icons';
 
 const moorLabel = { niedermoor: 'Niedermoor', hochmoor: 'Hochmoor', mineral: 'Mineralboden' } as const;
 
@@ -58,7 +58,7 @@ export default function Planner() {
     if (!res.hasMoor) return say('Ohne Moorfläche kann kein Projekt gestartet werden');
     const id = savePlan(planName.trim() || `${crop.name} · ${nf(res.moorHa, 1)} ha`);
     startProject(id);
-    say('Projekt gestartet – Begleitung in „Mein Betrieb“');
+    say('Projekt gestartet – Begleitung unter „Betrieb & Pegel“');
     nav('/betrieb');
   };
 
@@ -67,7 +67,7 @@ export default function Planner() {
       <PageHeader
         title="Planer"
         sub="Wiedervernässungskonzept, Kultur, Wirtschaftlichkeit und Förderung für Ihre Flächen – alle Werte sind Richtwerte aus dem Prototyp-Modell."
-        actions={<Link className="btn" to="/karte">＋ Flächen ändern</Link>}
+        actions={<Link className="btn" to="/karte"><Plus size={16} /> Flächen ändern</Link>}
       />
 
       <div className="grid-2-1">
@@ -76,14 +76,13 @@ export default function Planner() {
             <h3>1 · Flächen</h3>
             <div className="table-wrap">
               <table className="table">
-                <thead><tr><th /><th>Flurstück</th><th>Ort</th><th className="num">ha</th><th>Boden</th><th className="num">Torf</th><th className="num">Wasser heute</th></tr></thead>
+                <thead><tr><th /><th>Flurstück</th><th className="num">Fläche</th><th>Boden</th><th className="num">Torf</th><th className="num">Wasser heute</th></tr></thead>
                 <tbody>
                   {state.myParcels.map((p) => (
                     <tr key={p.id} className={draft.parcelIds.includes(p.id) ? 'on' : ''}>
                       <td><input type="checkbox" checked={draft.parcelIds.includes(p.id)} onChange={() => toggleParcel(p.id)} aria-label={`${p.label} auswählen`} /></td>
-                      <td><b>{p.label}</b></td>
-                      <td>{p.gemarkung}, {p.bundesland}</td>
-                      <td className="num">{nf(p.areaHa, 2)}</td>
+                      <td><b>{p.label}</b><div className="muted" style={{ fontSize: 12 }}>{p.gemarkung}, {p.bundesland}</div></td>
+                      <td className="num" style={{ whiteSpace: 'nowrap' }}>{nf(p.areaHa, 2)} ha</td>
                       <td><Badge tone={p.moorType === 'niedermoor' ? 'braun' : p.moorType === 'hochmoor' ? 'rot' : 'grau'}>{moorLabel[p.moorType]}</Badge></td>
                       <td className="num">{p.moorType === 'mineral' ? '–' : `${p.peatDepthCm} cm`}</td>
                       <td className="num">{p.moorType === 'mineral' ? '–' : `${p.waterLevelCm} cm`}</td>
@@ -188,8 +187,8 @@ export default function Planner() {
                 <LineChart
                   labels={labels}
                   series={[
-                    { name: 'Gegenüber heute', color: '#2f7fa8', data: res.rows.map((r) => Math.round(r.cumDelta)), area: true },
-                    { name: 'Absoluter Cashflow', color: '#6b8f3c', data: res.rows.map((r) => Math.round(r.cumNet)), dashed: true },
+                    { name: 'Gegenüber heute', color: '#1d5e78', data: res.rows.map((r) => Math.round(r.cumDelta)), area: true },
+                    { name: 'Absoluter Cashflow', color: '#2e6a3b', data: res.rows.map((r) => Math.round(r.cumNet)), dashed: true },
                   ]}
                   yFormat={(v) => `${nf(v / 1000)}k`} zeroLine unit=" €"
                 />
@@ -234,7 +233,7 @@ export default function Planner() {
             <h3>Klimawirkung: Emission nach Wasserstand</h3>
             <LineChart
               labels={curve.map(([w]) => `${w}`)} xTickEvery={4} unit=" t"
-              series={[{ name: 't CO₂e/ha·a', color: '#a0702c', data: curve.map(([, e]) => Math.round(e * 10) / 10), area: true }]}
+              series={[{ name: 't CO₂e/ha·a', color: '#8a5300', data: curve.map(([, e]) => Math.round(e * 10) / 10), area: true }]}
               yFormat={(v) => nf(v)}
             />
             <p className="muted small">Wasserflurabstand in cm unter Gelände (negativ: Überstau). Heute ca. {nf(currentWl, 0)} cm → {nf(emissionPerHa(currentWl), 1)} t CO₂e/ha·a. Ziel {targetWl} cm → {nf(emissionPerHa(targetWl), 1)} t. Vereinfachtes Modell nach dem GEST-Ansatz.</p>

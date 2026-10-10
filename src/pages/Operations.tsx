@@ -41,7 +41,7 @@ export default function Operations() {
   if (!project)
     return (
       <div className="page">
-        <PageHeader title="Mein Betrieb" sub="Laufende Begleitung während Wiedervernässung und Betrieb: Monitoring, Empfehlungen, Statistiken." />
+        <PageHeader title="Betrieb & Pegel" sub="Laufende Begleitung während Wiedervernässung und Betrieb: Monitoring, Empfehlungen, Statistiken." />
         <Empty icon={<Activity size={36} />} title="Noch kein aktives Projekt">
           Starten Sie im Planer ein Projekt – Paludio begleitet Sie dann von der Genehmigung über den Bau bis zum Regelbetrieb.
           <div className="row gap center" style={{ marginTop: 14 }}>
@@ -88,7 +88,7 @@ function ProjectView({ projectId: pid, setProjectId: setPid }: { projectId: stri
     if (!plan || !res || !sim)
       return (
         <div className="page">
-          <PageHeader title="Mein Betrieb" />
+          <PageHeader title="Betrieb & Pegel" />
           <Empty icon={<AlertTriangle size={36} />} title="Plan oder Flächen nicht mehr vorhanden">Dieses Projekt basiert auf einem gelöschten Plan.</Empty>
         </div>
       );
@@ -138,7 +138,7 @@ function ProjectView({ projectId: pid, setProjectId: setPid }: { projectId: stri
     return (
       <div className="page">
         <PageHeader
-          title="Mein Betrieb"
+          title="Betrieb & Pegel"
           sub={<>Projekt <b>{pr.name}</b> · {nf(res.moorHa, 1)} ha · <CropIcon name={res.crop.id} size={16} className="icon-inline" /> {res.crop.name} · Start {fdate(pr.startDate)}</>}
           actions={
             <>
@@ -190,10 +190,10 @@ function ProjectView({ projectId: pid, setProjectId: setPid }: { projectId: stri
               <h3>Wasserstand der letzten 12 Monate</h3>
               <LineChart
                 labels={wlLabels} xTickEvery={45} invertY unit=" cm"
-                band={{ lo: res.targetWl - 10, hi: res.targetWl + 10, color: '#2f7fa8', label: 'Zielkorridor' }}
+                band={{ lo: res.targetWl - 10, hi: res.targetWl + 10, color: '#1d5e78', label: 'Zielkorridor' }}
                 series={[
-                  { name: 'Wasserstand', color: '#2f7fa8', data: sim.days.map((d) => Math.round(d.wl * 10) / 10) },
-                  { name: 'Ziel', color: '#6b8f3c', dashed: true, data: sim.days.map(() => res.targetWl) },
+                  { name: 'Wasserstand', color: '#1d5e78', data: sim.days.map((d) => Math.round(d.wl * 10) / 10) },
+                  { name: 'Ziel', color: '#2e6a3b', dashed: true, data: sim.days.map(() => res.targetWl) },
                 ]}
               />
               <p className="muted small">cm unter Flur – oben = nass. Simulierte Pegelwerte; im Betrieb kommen die Daten von Ihren Loggern.</p>
@@ -202,15 +202,15 @@ function ProjectView({ projectId: pid, setProjectId: setPid }: { projectId: stri
             <div className="grid-2">
               <section className="card">
                 <h3>Niederschlag (Monat)</h3>
-                <BarChart labels={lastYear.map((_, i) => mLabels[mLabels.length - lastYear.length + i])} series={[{ name: 'mm', color: '#7aa6c2', data: lastYear.map((m) => Math.round(m.rain)) }]} yFormat={(v) => nf(v)} />
+                <BarChart labels={lastYear.map((_, i) => mLabels[mLabels.length - lastYear.length + i])} series={[{ name: 'mm', color: '#7db4cb', data: lastYear.map((m) => Math.round(m.rain)) }]} yFormat={(v) => nf(v)} />
               </section>
               <section className="card">
                 <h3>THG-Einsparung (kumuliert)</h3>
                 <LineChart
                   labels={mLabels} unit=" t"
                   series={[
-                    { name: 'Erreicht', color: '#6b8f3c', area: true, data: cumT.map((v) => Math.round(v)) },
-                    { name: 'Plan (volle Wirkung)', color: '#a0702c', dashed: true, data: monthly.map((m, i) => Math.round(Math.max(0, i - BUILD_END_MONTH) * planAvoidPerMonth)) },
+                    { name: 'Erreicht', color: '#2e6a3b', area: true, data: cumT.map((v) => Math.round(v)) },
+                    { name: 'Plan (volle Wirkung)', color: '#8a5300', dashed: true, data: monthly.map((m, i) => Math.round(Math.max(0, i - BUILD_END_MONTH) * planAvoidPerMonth)) },
                   ]}
                   yFormat={(v) => nf(v)}
                 />
@@ -220,15 +220,15 @@ function ProjectView({ projectId: pid, setProjectId: setPid }: { projectId: stri
             <div className="grid-2">
               <section className="card">
                 <h3>Cashflow (kumuliert)</h3>
-                <LineChart labels={mLabels} unit=" €" zeroLine series={[{ name: 'Saldo', color: '#2f7fa8', area: true, data: cumNet.map((v) => Math.round(v)) }]} yFormat={(v) => `${nf(v / 1000)}k`} />
+                <LineChart labels={mLabels} unit=" €" zeroLine series={[{ name: 'Saldo', color: '#1d5e78', area: true, data: cumNet.map((v) => Math.round(v)) }]} yFormat={(v) => `${nf(v / 1000)}k`} />
               </section>
               <section className="card">
                 <h3>Erlöse Plan vs. Ist</h3>
                 <BarChart
                   labels={yields.map((y) => `Jahr ${y.year}`)}
                   series={[
-                    { name: 'Plan', color: '#c9b48a', data: yields.map((y) => Math.round(y.planned)) },
-                    { name: 'Ist', color: '#6b8f3c', data: yields.map((y) => (y.actual == null ? null : Math.round(y.actual))) },
+                    { name: 'Plan', color: '#c3cbc5', data: yields.map((y) => Math.round(y.planned)) },
+                    { name: 'Ist', color: '#2e6a3b', data: yields.map((y) => (y.actual == null ? null : Math.round(y.actual))) },
                   ]}
                   yFormat={(v) => `${nf(v / 1000)}k`}
                 />

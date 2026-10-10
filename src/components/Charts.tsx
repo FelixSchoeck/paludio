@@ -98,13 +98,13 @@ export function LineChart({
         )}
         {ticks.map((t) => (
           <g key={t}>
-            <line x1={pad.l} x2={W - pad.r} y1={y(t)} y2={y(t)} stroke="#e4ddcf" strokeWidth={1} />
-            <text x={pad.l - 8} y={y(t) + 4} textAnchor="end" fontSize={11} fill="#7a6f60">{yFormat(t)}</text>
+            <line x1={pad.l} x2={W - pad.r} y1={y(t)} y2={y(t)} stroke="#edefea" strokeWidth={1} />
+            <text x={pad.l - 8} y={y(t) + 4} textAnchor="end" fontSize={11} fill="#58635c">{yFormat(t)}</text>
           </g>
         ))}
-        {zeroLine && <line x1={pad.l} x2={W - pad.r} y1={y(0)} y2={y(0)} stroke="#9a8d78" strokeWidth={1.2} />}
+        {zeroLine && <line x1={pad.l} x2={W - pad.r} y1={y(0)} y2={y(0)} stroke="#a5aca7" strokeWidth={1.2} />}
         {labels.map((l, i) => (i % every === 0 ? (
-          <text key={i} x={x(i)} y={height - 8} textAnchor="middle" fontSize={11} fill="#7a6f60">{l}</text>
+          <text key={i} x={x(i)} y={height - 8} textAnchor="middle" fontSize={11} fill="#58635c">{l}</text>
         ) : null))}
         {series.map((s) => (
           <g key={s.name}>
@@ -116,16 +116,16 @@ export function LineChart({
         ))}
         {hover != null && (
           <g>
-            <line x1={x(hover)} x2={x(hover)} y1={pad.t} y2={height - pad.b} stroke="#3b3226" strokeDasharray="3 3" />
+            <line x1={x(hover)} x2={x(hover)} y1={pad.t} y2={height - pad.b} stroke="#58635c" strokeDasharray="3 3" />
             {series.map((s) => s.data[hover] != null && <circle key={s.name} cx={x(hover)} cy={y(s.data[hover] as number)} r={4} fill={s.color} stroke="#fff" strokeWidth={1.5} />)}
             {(() => {
               const bx = x(hover) > W * 0.62 ? x(hover) - 170 : x(hover) + 10;
               return (
                 <g transform={`translate(${bx},${pad.t + 4})`}>
-                  <rect width={160} height={20 + series.length * 16} rx={6} fill="#2b2118" opacity={0.92} />
-                  <text x={8} y={15} fontSize={11} fill="#f5f2ea" fontWeight={600}>{labels[hover]}</text>
+                  <rect width={160} height={20 + series.length * 16} rx={6} fill="#18211c" opacity={0.92} />
+                  <text x={8} y={15} fontSize={11} fill="#ffffff" fontWeight={600}>{labels[hover]}</text>
                   {series.map((s, k) => (
-                    <text key={s.name} x={8} y={31 + k * 16} fontSize={11} fill="#f5f2ea">
+                    <text key={s.name} x={8} y={31 + k * 16} fontSize={11} fill="#ffffff">
                       <tspan fill={s.color}>● </tspan>{s.name}: {s.data[hover] != null ? yFormat(s.data[hover] as number) : '–'}{unit}
                     </text>
                   ))}
@@ -191,11 +191,11 @@ export function BarChart({
       <svg viewBox={`0 0 ${W} ${height}`} width="100%" onMouseLeave={() => setHover(null)}>
         {ticks.map((t) => (
           <g key={t}>
-            <line x1={pad.l} x2={W - pad.r} y1={y(t)} y2={y(t)} stroke="#e4ddcf" />
-            <text x={pad.l - 8} y={y(t) + 4} textAnchor="end" fontSize={11} fill="#7a6f60">{yFormat(t)}</text>
+            <line x1={pad.l} x2={W - pad.r} y1={y(t)} y2={y(t)} stroke="#edefea" />
+            <text x={pad.l - 8} y={y(t) + 4} textAnchor="end" fontSize={11} fill="#58635c">{yFormat(t)}</text>
           </g>
         ))}
-        <line x1={pad.l} x2={W - pad.r} y1={y(0)} y2={y(0)} stroke="#9a8d78" />
+        <line x1={pad.l} x2={W - pad.r} y1={y(0)} y2={y(0)} stroke="#a5aca7" />
         {labels.map((l, i) => {
           const gx = pad.l + i * slot;
           const bw = stacked ? slot * 0.6 : (slot * 0.76) / series.length;
@@ -203,7 +203,7 @@ export function BarChart({
           let neg = 0;
           return (
             <g key={i} onMouseEnter={() => setHover(i)}>
-              <rect x={gx} y={pad.t} width={slot} height={ih} fill={hover === i ? '#2b2118' : 'transparent'} opacity={0.05} />
+              <rect x={gx} y={pad.t} width={slot} height={ih} fill={hover === i ? '#18211c' : 'transparent'} opacity={0.05} />
               {series.map((s, k) => {
                 const v = s.data[i];
                 if (v == null) return null;
@@ -226,16 +226,16 @@ export function BarChart({
                 const bx = stacked ? gx + (slot - bw) / 2 : gx + slot * 0.12 + k * bw;
                 return <rect key={s.name} x={bx} y={Math.min(y0, y1)} width={Math.max(1, bw - 1)} height={Math.abs(y0 - y1)} rx={2} fill={s.color} />;
               })}
-              {i % every === 0 && <text x={gx + slot / 2} y={height - 8} textAnchor="middle" fontSize={11} fill="#7a6f60">{l}</text>}
+              {i % every === 0 && <text x={gx + slot / 2} y={height - 8} textAnchor="middle" fontSize={11} fill="#58635c">{l}</text>}
             </g>
           );
         })}
         {hover != null && (
           <g transform={`translate(${Math.min(W - 176, pad.l + hover * slot + slot / 2 + 8)},${pad.t + 2})`}>
-            <rect width={168} height={20 + series.length * 16} rx={6} fill="#2b2118" opacity={0.92} />
-            <text x={8} y={15} fontSize={11} fill="#f5f2ea" fontWeight={600}>{labels[hover]}</text>
+            <rect width={168} height={20 + series.length * 16} rx={6} fill="#18211c" opacity={0.92} />
+            <text x={8} y={15} fontSize={11} fill="#ffffff" fontWeight={600}>{labels[hover]}</text>
             {series.map((s, k) => (
-              <text key={s.name} x={8} y={31 + k * 16} fontSize={11} fill="#f5f2ea">
+              <text key={s.name} x={8} y={31 + k * 16} fontSize={11} fill="#ffffff">
                 <tspan fill={s.color}>● </tspan>{s.name}: {s.data[hover] != null ? yFormat(s.data[hover] as number) : '–'}
               </text>
             ))}
