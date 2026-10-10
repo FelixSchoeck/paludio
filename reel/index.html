@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<title>Paludio Showreel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: #f3f4ef; }
+  body { font-family: Geist, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; }
+  #bg { position: absolute; inset: 0; width: 1920px; height: 1080px; }
+
+  #rig { position: absolute; inset: 0; transform-origin: 50% 70%; will-change: transform, opacity, filter; }
+  #cam { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+  #win { width: 1600px; height: 1034px; border-radius: 16px; overflow: hidden; background: #fff;
+    box-shadow: 0 0 0 1px rgba(24,33,28,.07), 0 2px 6px rgba(24,33,28,.05), 0 50px 140px -40px rgba(24,33,28,.38); }
+  .bar { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 14px; background: #f7f7f4; border-bottom: 1px solid #e6e8e2; position: relative; }
+  .bar i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+  .bar i:nth-child(1) { background: #ff5f57; } .bar i:nth-child(2) { background: #febc2e; } .bar i:nth-child(3) { background: #28c840; }
+  .bar span { position: absolute; left: 0; right: 0; text-align: center; font-size: 13px; font-weight: 500; color: #7a837d; pointer-events: none; }
+  #view { position: relative; width: 1600px; height: 1000px; overflow: hidden; }
+  #view img { position: absolute; left: 0; top: 0; width: 1600px; height: 1000px; }
+
+  #cursor { position: absolute; left: 0; top: 0; width: 30px; height: 30px; transform-origin: 0 0; z-index: 10; filter: drop-shadow(0 2px 3px rgba(0,0,0,.28)); }
+  #ripple { position: absolute; width: 64px; height: 64px; border-radius: 50%; background: radial-gradient(circle, rgba(46,106,59,.28) 0%, rgba(46,106,59,.12) 55%, rgba(46,106,59,0) 70%); border: 2px solid rgba(46,106,59,.55); z-index: 9; }
+
+  .pill { position: absolute; left: 50%; bottom: 64px; display: flex; align-items: center; gap: 14px; padding: 14px 30px 14px 16px; border-radius: 999px;
+    background: rgba(22,30,25,.82); backdrop-filter: blur(24px) saturate(1.4); color: #fff; font-size: 30px; font-weight: 600; letter-spacing: -0.02em;
+    box-shadow: 0 20px 50px -18px rgba(0,0,0,.45); white-space: nowrap; z-index: 20; }
+  .pill b { width: 40px; height: 40px; border-radius: 50%; background: #2e6a3b; display: grid; place-items: center; font-size: 19px; font-weight: 600; letter-spacing: 0; }
+
+  #mark, #wordtext { position: absolute; overflow: visible; fill-rule: evenodd; clip-rule: evenodd; z-index: 30; }
+  #mark path { transform-box: fill-box; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="bg"></canvas>
+  <div id="rig">
+    <div id="cam">
+      <div id="win">
+        <div class="bar"><i></i><i></i><i></i><span>Paludio</span></div>
+        <div id="view"></div>
+      </div>
+    </div>
+  </div>
+  <div id="ripple"></div>
+  <svg id="cursor" viewBox="0 0 30 30"><path d="M3 2 L3 23.5 L8.6 18.4 L12.4 27 L16.2 25.3 L12.5 16.9 L20 16.9 Z" fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>
+
+  <div id="cap1" class="pill"><b>1</b>Flächen wählen</div>
+  <div id="cap2" class="pill"><b>2</b>Nutzung planen</div>
+  <div id="cap3" class="pill"><b>3</b>Antrag vorbereiten</div>
+
+  <svg id="mark" viewBox="41 41 467 467"></svg>
+  <svg id="wordtext" viewBox="580 37 1134 471"></svg>
+</div>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
